@@ -1,8 +1,8 @@
-/* 
- * CS:APP Data Lab 
- * 
- * <Please put your name and userid here>
- * 
+/*
+ * CS:APP Data Lab
+ *
+ * 杨艺欣  2200017768
+ *
  * bits.c - Source file with your solutions to the Lab.
  *          This is the file you will hand in to your instructor.
  *
@@ -10,7 +10,7 @@
  * compiler. You can still use printf for debugging without including
  * <stdio.h>, although you might get a compiler warning. In general,
  * it's not good practice to ignore compiler warnings, but in this
- * case it's OK.  
+ * case it's OK.
  */
 
 #if 0
@@ -129,7 +129,6 @@ NOTES:
  *      the correct answers.
  */
 
-
 #endif
 /* Copyright (C) 1991-2022 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
@@ -166,27 +165,27 @@ NOTES:
    - 56 emoji characters
    - 285 hentaigana
    - 3 additional Zanabazar Square characters */
-/* 
- * bitXnor - ~(x^y) using only ~ and | 
+/*
+ * bitXnor - ~(x^y) using only ~ and |
  *   Example: bitXnor(6, -5) = 2
  *   Legal ops: ~ |
  *   Max ops: 7
  *   Rating: 1
  */
-int bitXnor(int x, int y) {
-  return 2;
+int bitXnor(int x, int y) { 
+    return (~(x | y)) | (~(~x | ~y));
 }
-/* 
+/*
  * bitConditional - x ? y : z for each bit respectively
  *   Example: bitConditional(0b00110011, 0b01010101, 0b00001111) = 0b00011101
  *   Legal ops: & | ^ ~
  *   Max ops: 4
  *   Rating: 1
  */
-int bitConditional(int x, int y, int z) {
-  return 2;
+int bitConditional(int x, int y, int z) { 
+    return (x & y) | (~x & z);
 }
-/* 
+/*
  * byteSwap - swaps the nth byte and the mth byte
  *  Examples: byteSwap(0x12345678, 1, 3) = 0x56341278
  *            byteSwap(0xDEADBEEF, 0, 2) = 0xDEEFBEAD
@@ -196,9 +195,20 @@ int bitConditional(int x, int y, int z) {
  *  Rating: 2
  */
 int byteSwap(int x, int n, int m) {
-    return 2;
+    //
+    int Bn, Bm, B, f;
+    n <<= 3;      // 8
+    m <<= 3;      // 24
+    Bn = x >> n;  // 0xyyxxxx56
+    Bm = x >> m;  // 0xyyxxxx12
+
+    Bn &= 0xff;  // 0x56
+    Bm &= 0xff;  // 0x12
+    f = (0xff << n) | (0xff << m);
+    B = (Bn << m) | (Bm << n);
+    return (f & B) | (~f & x);
 }
-/* 
+/*
  * logicalShift - shift x to the right by n, using a logical shift
  *   Can assume that 0 <= n <= 31
  *   Examples: logicalShift(0x87654321,4) = 0x08765432
@@ -207,21 +217,26 @@ int byteSwap(int x, int n, int m) {
  *   Rating: 3
  */
 int logicalShift(int x, int n) {
-  return 2;
+    int m = x >> 31;
+    m <<= 31 + (~n + 1);
+    m <<= 1;
+    return ((x >> n) ^ m);
 }
-/* 
- * cleanConsecutive1 - change any consecutive 1 to zeros in the binary form of x.
- *   Consecutive 1 means a set of 1 that contains more than one 1.
- *   Examples cleanConsecutive1(0x10) = 0x10
- *            cleanConsecutive1(0xF0) = 0x0
+/*
+ * cleanConsecutive1 - change any consecutive 1 to zeros in the binary form of
+ * x. Consecutive 1 means a set of 1 that contains more than one 1. Examples
+ * cleanConsecutive1(0x10) = 0x10 cleanConsecutive1(0xF0) = 0x0
  *            cleanConsecutive1(0xFFFF0001) = 0x1
  *            cleanConsecutive1(0x4F4F4F4F) = 0x40404040
  *   Legal ops: ! ~ & ^ | + << >>
  *   Max ops: 16
  *   Rating: 4
  */
-int cleanConsecutive1(int x){
-    return 2;
+int cleanConsecutive1(int x) {
+    int left = x << 1;
+    int right = x >> 1;
+    right &= ~(1 << 31);
+    return x & (~left) & (~right);
 }
 /*
  * leftBitCount - returns count of number of consective 1's in
@@ -232,27 +247,43 @@ int cleanConsecutive1(int x){
  *   Rating: 4
  */
 int leftBitCount(int x) {
-  return 2;
+    int sign = x >> 31;  // !sign => 0
+    int b1, b2, b4, b8, b16;
+    int m = x ^ sign;
+    int sum = 0;
+
+    b16 = (!(m >> 16)) << 4;
+    sum += b16;
+    b8 = (!(m >> (25 + ~sum))) << 3;
+    sum += b8;
+    b4 = (!(m >> (29 + ~sum))) << 2;
+    sum += b4;
+    b2 = (!(m >> (31 + ~sum))) << 1;
+    sum += b2;
+    b1 = (!(m >> (32 + ~sum)));
+    sum += b1;
+    sum += !m;
+    return sign & sum;
 }
-/* 
- * counter1To5 - return 1 + x if x < 5, return 1 otherwise, we ensure that 1<=x<=5
- *   Examples counter1To5(2) = 3,  counter1To5(5) = 1
- *   Legal ops: ~ & ! | + << >>
- *   Max ops: 15
- *   Rating: 2
+/*
+ * counter1To5 - return 1 + x if x < 5, return 1 otherwise, we ensure that
+ * 1<=x<=5 Examples counter1To5(2) = 3,  counter1To5(5) = 1 Legal ops: ~ & ! | +
+ * << >> Max ops: 15 Rating: 2
  */
 int counter1To5(int x) {
-  return 2;
+    int lessThan5 = !(x >> 2) | !((x & 1) | (x & 2));
+    return 1 + (lessThan5 & x) + ((lessThan5 << 1) & x) +
+           ((lessThan5 << 2) & x);
 }
-/* 
+/*
  * sameSign - return 1 if x and y have same sign, and 0 otherwise
  *   Examples sameSign(0x12345678, 0) = 1, sameSign(0xFFFFFFFF,0x1) = 0
  *   Legal ops: ! ~ & ! ^ | + << >>
  *   Max ops: 5
  *   Rating: 2
  */
-int sameSign(int x, int y) {
-  return 2;
+int sameSign(int x, int y) { 
+    return !((x >> 31) ^ (y >> 31));
 }
 /*
  * satMul3 - multiplies by 3, saturating to Tmin or Tmax if overflow
@@ -266,28 +297,55 @@ int sameSign(int x, int y) {
  *  Rating: 3
  */
 int satMul3(int x) {
-    return 2;
+    int shifted = x << 1;
+    int sshft = shifted >> 31;
+    int sx = x >> 31;
+    int res = x + shifted;
+    int sr = res >> 31;
+    // sx = 0: sshft = 1 | sr = 1
+    // sx = 1: sshft = 0 | sr = 0
+    int flow = (sx ^ sshft) | (sx ^ sr);
+    int underflow = flow & sx;
+    int overflow = flow & (~sx);
+    int TMin = 1 << 31;
+    int TMax = ~TMin;
+    return (overflow & TMax) | (underflow & TMin) | (~flow & res);
 }
-/* 
- * isGreater - if x > y  then return 1, else return 0 
+/*
+ * isGreater - if x > y  then return 1, else return 0
  *   Example: isGreater(4,5) = 0, isGreater(5,4) = 1
  *   Legal ops: ! ~ & ^ | + << >>
  *   Max ops: 24
  *   Rating: 3
  */
 int isGreater(int x, int y) {
-  return 2;
+    int sx = x >> 31;
+    int sy = y >> 31;
+    int diff = x + (~y + 1);
+    int sd = diff >> 31;
+    int exs = sx ^ sy;
+    int overflow = !!(exs & ~(sy ^ sd));
+    int neq = !!(x ^ y);
+    // int neq = x ^ y;
+    // diff > 0?
+    return ((!sd) ^ overflow) & neq;
 }
-/* 
+/*
  * subOK - Determine if can compute x-y without overflow
  *   Example: subOK(0x80000000,0x80000000) = 1,
- *            subOK(0x80000000,0x70000000) = 0, 
+ *            subOK(0x80000000,0x70000000) = 0,
  *   Legal ops: ! ~ & ^ | + << >>
  *   Max ops: 20
  *   Rating: 3
  */
 int subOK(int x, int y) {
-  return 2;
+    int sx = x >> 31;
+    int sy = y >> 31;
+    int diff = x + (~y + 1);
+    int sd = diff >> 31;
+    int exs = sx ^ sy;
+    int subOK = !(exs & ~(sy ^ sd));
+    return subOK;
 }
 /*
  * trueFiveEighths - multiplies by 5/8 rounding toward 0,
@@ -299,11 +357,16 @@ int subOK(int x, int y) {
  *  Max ops: 25
  *  Rating: 4
  */
-int trueFiveEighths(int x)
-{
-    return 2;
+int trueFiveEighths(int x) {
+    int sx = x >> 31;
+    int rounded = ((x << 29) >> 29) & 7;  // 0xyyyy...123
+    int res = x >> 3;
+    int rnd = (((rounded << 2) + rounded) >> 3);
+    res += (res << 2) + rnd;
+    res += (!!rounded) & sx;
+    return res;
 }
-/* 
+/*
  * float_half - Return bit-level equivalent of expression 0.5*f for
  *   floating point argument f.
  *   Both the argument and result are passed as unsigned int's, but
@@ -315,9 +378,37 @@ int trueFiveEighths(int x)
  *   Rating: 4
  */
 unsigned float_half(unsigned uf) {
-  return 2;
+    unsigned sign = uf >> 31;
+    unsigned exp = (uf >> 23) & 0xff;
+    unsigned frac = uf & 0x7fffff;
+    if (exp == 0xff) return uf;
+
+    if (!(exp & 0xff)) {  // denorm
+        if ((frac & 3) == 3) ++frac;
+        frac >>= 1;
+    } else {
+        exp--;
+        if (exp == 0) {
+            // 16777215:  exp = 0x01, frac = 0x7fffff
+            // 0x01  0x0
+
+            if ((frac & 3) == 3) {
+                frac >>= 1;
+                frac |= 0x400000;
+                ++frac;
+                if (frac == 0x800000) ++exp;
+            } else {
+                frac >>= 1;
+                frac |= 0x400000;
+            }
+        }
+    }
+    frac &= 0x7fffff;
+    // 16777215: 0x00ffffff, exp = 0x01, frac = 0x7fffff
+    // res: 0x800000, exp = 0x01, frac = 0x0;
+    return (sign << 31) | (exp << 23) | frac;
 }
-/* 
+/*
  * float_i2f - Return bit-level equivalent of expression (float) x
  *   Result is returned as unsigned int, but
  *   it is to be interpreted as the bit-level representation of a
@@ -327,9 +418,38 @@ unsigned float_half(unsigned uf) {
  *   Rating: 4
  */
 unsigned float_i2f(int x) {
-  return 2;
+    unsigned y = x;
+    unsigned sign = y >> 31;
+    unsigned exp;
+    unsigned frac;
+    int i = 31;  // 31 - num of leading zeroes, also num of y's decimal places
+    unsigned fracMask = 0x007fffff;
+    unsigned roundTo;
+    unsigned rounded;
+
+    if (x == 0) return 0;
+    if (sign) y = -x;
+
+    while (!(y >> i)) {
+        i--;
+    }
+
+    y <<= 32 - i;  // .xxxx...
+    exp = 127 + i;
+
+    rounded = y & 0x1ff;
+    frac = (y >> 9);
+    roundTo = frac & 1;
+
+    if (rounded >= 0x100) {
+        if (roundTo || rounded > 0x100) {
+            if (frac == fracMask) ++exp;
+            frac++;
+        }
+    }
+    return (sign << 31) | (exp << 23) | (frac & fracMask);
 }
-/* 
+/*
  * float64_f2i - Return bit-level equivalent of expression (int) f
  *   for 64 bit floating point argument f.
  *   Argument is passed as two unsigned int, but
@@ -343,9 +463,24 @@ unsigned float_i2f(int x) {
  *   Rating: 4
  */
 int float64_f2i(unsigned uf1, unsigned uf2) {
-  return 2;
+    unsigned sign = uf2 >> 31;
+    unsigned exp = (uf2 >> 20) & 0x7ff;  // Bias = 1023
+    int E = exp - 1023;                  // 29
+    int res = 0;
+    uf2 &= 0xfffff;
+    if (E >= 31) return 0x80000000;
+
+    if (E >= 20) res = uf2 << (E - 20);
+    else if (E >= 0) res = uf2 >> (20 - E);
+    res |= 1 << E;
+    if (E > 20) 
+        res |= uf1 >> (52 - E);
+    if (E < 0)
+        return 0;
+    if (sign) res = -res;
+    return res;
 }
-/* 
+/*
  * float_negpwr2 - Return bit-level equivalent of the expression 2.0^-x
  *   (2.0 raised to the power -x) for any 32-bit integer x.
  *
@@ -353,11 +488,16 @@ int float64_f2i(unsigned uf1, unsigned uf2) {
  *   representation as the single-precision floating-point number 2.0^-x.
  *   If the result is too small to be represented as a denorm, return
  *   0. If too large, return +INF.
- * 
- *   Legal ops: Any integer/unsigned operations incl. ||, &&. Also if, while 
- *   Max ops: 20 
+ *
+ *   Legal ops: Any integer/unsigned operations incl. ||, &&. Also if, while
+ *   Max ops: 20
  *   Rating: 4
  */
 unsigned float_negpwr2(int x) {
-    return 2;
+    if (x > 149) return 0;
+    if (x >= 127) {
+        return 1 << (149 - x);
+    }
+    if (x < -127) return 0x7f800000;
+    return (-x + 127) << 23;
 }
