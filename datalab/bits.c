@@ -323,8 +323,10 @@ int isGreater(int x, int y) {
     int sy = y >> 31;
     int diff = x + (~y + 1);
     int sd = diff >> 31;
-    int exs = sx ^ sy;
-    int overflow = !!(exs & ~(sy ^ sd));
+    // sx  sy  sd
+    //  +   -   -   overflow
+    //  -   +   +   underflow 
+    int overflow = (sx ^ sy) & ~(sy ^ sd);
     int neq = !!(x ^ y);
     // int neq = x ^ y;
     // diff > 0?
@@ -343,8 +345,7 @@ int subOK(int x, int y) {
     int sy = y >> 31;
     int diff = x + (~y + 1);
     int sd = diff >> 31;
-    int exs = sx ^ sy;
-    int subOK = !(exs & ~(sy ^ sd));
+    int subOK = !((sx ^ sy) & ~(sy ^ sd));
     return subOK;
 }
 /*
@@ -380,32 +381,18 @@ int trueFiveEighths(int x) {
 unsigned float_half(unsigned uf) {
     unsigned sign = uf >> 31;
     unsigned exp = (uf >> 23) & 0xff;
-    unsigned frac = uf & 0x7fffff;
-    if (exp == 0xff) return uf;
+    unsigned expleq1 = exp <= 1;
+    // when expleq1, frac includes the last bit of exp
+    unsigned frac = uf & (0xffffff >> !expleq1);
 
-    if (!(exp & 0xff)) {  // denorm
+    if ((uf << 1) == 0) return uf;
+    if (exp == 0xff) return uf;
+    if (exp <= 1) {
+        // carry
         if ((frac & 3) == 3) ++frac;
         frac >>= 1;
-    } else {
-        exp--;
-        if (exp == 0) {
-            // 16777215:  exp = 0x01, frac = 0x7fffff
-            // 0x01  0x0
-
-            if ((frac & 3) == 3) {
-                frac >>= 1;
-                frac |= 0x400000;
-                ++frac;
-                if (frac == 0x800000) ++exp;
-            } else {
-                frac >>= 1;
-                frac |= 0x400000;
-            }
-        }
     }
-    frac &= 0x7fffff;
-    // 16777215: 0x00ffffff, exp = 0x01, frac = 0x7fffff
-    // res: 0x800000, exp = 0x01, frac = 0x0;
+    if (exp & 0xff) exp--;
     return (sign << 31) | (exp << 23) | frac;
 }
 /*
@@ -420,34 +407,31 @@ unsigned float_half(unsigned uf) {
 unsigned float_i2f(int x) {
     unsigned y = x;
     unsigned sign = y >> 31;
-    unsigned exp;
-    unsigned frac;
-    int i = 31;  // 31 - num of leading zeroes, also num of y's decimal places
-    unsigned fracMask = 0x007fffff;
+    unsigned exp = 0;
+    unsigned frac = 0;
+    int E = 31;  // 31 - num of leading zeroes, also num of y's decimal places
+    unsigned fracMask = 0x7fffff;
     unsigned roundTo;
     unsigned rounded;
 
     if (x == 0) return 0;
     if (sign) y = -x;
-
-    while (!(y >> i)) {
-        i--;
+    while (!(y >> E)) {
+        E--;
     }
-
-    y <<= 32 - i;  // .xxxx...
-    exp = 127 + i;
+    // [00..00][1][xx..xx]
+    //   31-E   1    E     
+    // [s][exp=11][frac=23]
+    // y <<= (23 - E)
+    y <<= 32 - E;  // E must > 0
+    exp = 127 + E;
 
     rounded = y & 0x1ff;
-    frac = (y >> 9);
+    frac = (y >> 9) & fracMask;
     roundTo = frac & 1;
-
-    if (rounded >= 0x100) {
-        if (roundTo || rounded > 0x100) {
-            if (frac == fracMask) ++exp;
-            frac++;
-        }
-    }
-    return (sign << 31) | (exp << 23) | (frac & fracMask);
+    if (rounded + roundTo > 0x100)
+        frac++;
+    return ((sign << 31) | (exp << 23)) + frac;
 }
 /*
  * float64_f2i - Return bit-level equivalent of expression (int) f
@@ -469,16 +453,19 @@ int float64_f2i(unsigned uf1, unsigned uf2) {
     int res = 0;
     uf2 &= 0xfffff;
     if (E >= 31) return 0x80000000;
+    if (E < 0) return 0;
+    // 20 <= E <= 31:
+    // [--(32-E)--][---20---][---(E-20)---]
+    //  00......00  from uf2  from uf1
 
+    // 0 <= E <= 20
+    // [--(32-E)--][---E----]
+    //  00......00  from uf2
     if (E >= 20) res = uf2 << (E - 20);
-    else if (E >= 0) res = uf2 >> (20 - E);
+    else res = uf2 >> (20 - E);
     res |= 1 << E;
-    if (E > 20) 
-        res |= uf1 >> (52 - E);
-    if (E < 0)
-        return 0;
-    if (sign) res = -res;
-    return res;
+    if (E > 20) res |= uf1 >> (52 - E);
+    return sign ? -res : res;
 }
 /*
  * float_negpwr2 - Return bit-level equivalent of the expression 2.0^-x
