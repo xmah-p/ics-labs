@@ -1,0 +1,77 @@
+# 杨艺欣    2200017768
+
+
+# Start program
+    .pos 0
+    irmovq stack, %rsp
+    call main
+    halt
+
+.align 8
+Array:
+    .quad 0xbca
+    .quad 0xcba
+    .quad 0xacb
+    .quad 0xcab
+    .quad 0xabc
+    .quad 0xbac
+
+# void bubble_sort(long* data, long count) {
+#     long* i;
+#     long* last;
+#     for (last = data + count - 1; last > data; last--) {
+
+#         for (i = data; i < last; i++) {
+#             if (*(i + 1) < *i) {
+#                 long t = *(i + 1);
+#                 *(i + 1) = *i;
+#                 *i = t;
+#             }
+#         }
+#     }
+# }
+
+bubble_sort:
+    addq %rsi, %rsi
+    addq %rsi, %rsi
+    addq %rsi, %rsi     # rsi *= 8
+    rrmovq %rsi, %r9    # last in r9
+    addq %rdi, %r9      
+loop1:
+    irmovq $8, %rdx
+    subq %rdx, %r9        # last--
+# test1:
+    rrmovq %r9, %r10    
+    subq %rdi, %r10     
+    jle end             # if last <= data, end
+
+    rrmovq %rdi, %r8    # i = data in r8
+    jmp test2
+
+loop2:
+    irmovq $8, %rdx
+    addq %rdx, %r8        # i++    
+test2:
+    rrmovq %r8, %r10    
+    subq  %r9, %r10
+    jge loop1                 # if i - last >= 0, goto loop1
+
+    mrmovq 8(%r8), %rax       
+    rrmovq %rax, %r11        # *(i+1) in rax and r11
+    mrmovq (%r8), %rbx       # *i in rbx
+    subq %rbx, %r11
+    jge loop2
+    rmmovq %rax, (%r8)
+    rmmovq %rbx, 8(%r8)
+    jmp loop2
+end:
+    ret
+
+main:
+    irmovq Array, %rdi
+    irmovq $6, %rsi
+    call bubble_sort
+    ret
+
+    .pos 0x200
+stack:
