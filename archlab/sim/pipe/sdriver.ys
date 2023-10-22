@@ -32,7 +32,22 @@ ncopy:
 ##################################################################
 # You can modify this portion
 	# Loop header	
-	iaddq $-9, %rdx
+	irmovq Orig, %r14
+	pushq %r14
+	jm $0, %rsp
+
+	iaddq $-1, %rdx
+	jne NotOne
+
+One:
+	mrmovq (%rdi), %r10	
+	andq %r10, %r10
+	jm $1, %rax
+	rmmovq %r10, (%rsi)
+	ret
+
+NotOne:
+	iaddq $-8, %rdx
 	andq %rdx, %rdx		# len <= 0?
 	jl Rem		# if so, goto Rem:
 Loop:	
@@ -141,6 +156,27 @@ L3: jmp S3
 L2: jmp S2
 L1: jmp S1
 
+
+
+Orig:
+	andq %rdx,%rdx		# len <= 0?
+	jle Done		# if so, goto Done:
+
+OLoop:	
+	mrmovq (%rdi), %r10	# read val from src...
+	rmmovq %r10, (%rsi)	# ...and store it to dst
+	andq %r10, %r10		# val <= 0?
+	jle Npos		# if so, goto Npos:
+	iaddq $1, %rax		# count++
+Npos:	
+	iaddq $-1, %rdx		# len--
+	iaddq $8, %rdi		# src++
+	iaddq $8, %rsi		# dst++
+	andq %rdx,%rdx		# len > 0?
+	jg OLoop			# if so, goto Loop:
+
+
+
 ##################################################################
 # Do not modify the following section of code
 # Function epilogue.
@@ -158,8 +194,8 @@ EndFun:
 	.align 8
 src:
 	.quad 1
-	.quad 2
-	.quad -3
+	.quad -2
+	.quad 3
 	.quad -4
 	.quad 0xbcdefa # This shouldn't get moved
 
