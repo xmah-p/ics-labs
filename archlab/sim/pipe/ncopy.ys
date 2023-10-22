@@ -18,15 +18,16 @@ ncopy:
 
 ##################################################################
 # You can modify this portion
-	# Loop header	
+	# fool yis, jump to Orig if with yis, do nothing otherwise	
 	irmovq Orig, %r14
 	pushq %r14
 	jm $0, %rsp
 
+# Special case: len == 1
 	iaddq $-1, %rdx
 	jne NotOne
 
-One:
+One: # handle len == 1
 	mrmovq (%rdi), %r10	
 	andq %r10, %r10
 	jm $1, %rax
@@ -34,9 +35,9 @@ One:
 	ret
 
 NotOne:
-	iaddq $-8, %rdx
-	andq %rdx, %rdx		# len <= 0?
-	jl Rem		# if so, goto Rem:
+	iaddq $-8, %rdx    # By now, rdx decremented by 9
+	andq %rdx, %rdx		
+	jl Rem		# goto remainder handling
 Loop:	
 	mrmovq (%rdi), %r14
 	mrmovq 8(%rdi), %r13
@@ -48,10 +49,11 @@ Loop:
 	mrmovq 56(%rdi), %rbx
 	mrmovq 64(%rdi), %rcx
 
-	iaddq $72, %rdi		# src++
+	iaddq $72, %rdi		# update src
 
-	rmmovq %rcx, 64(%rsi)	# ...and store it to dst
-	andq %rcx, %rcx		# val <= 0?
+# write to dst, update count
+	rmmovq %rcx, 64(%rsi)
+	andq %rcx, %rcx		
 	jm $1, %rax		
 S8:
 	rmmovq %rbx, 56(%rsi)
@@ -86,12 +88,12 @@ S1:
 	andq %r14, %r14
 	jm $1, %rax
 
-	iaddq $72, %rsi		# dst++
-	iaddq $-9, %rdx		# len--
-	jge Loop			# if so, goto Loop:
+	iaddq $72, %rsi		# update dst
+	iaddq $-9, %rdx		# update len
+	jge Loop			# goto Loop:
 
-Rem:
-	rrmovq %rdx, %rbp
+Rem:    # handle remainder
+	rrmovq %rdx, %rbp    # rbp = len
 	iaddq $8, %rbp
 	# (9 + rdx) elements remain
 	# switch (rbp) {
@@ -105,6 +107,16 @@ Rem:
 	# }
 	andq %rbp, %rbp
 	jl Done    # len <= -9, Done
+	jne NotOne2
+
+One2:
+	mrmovq (%rdi), %r10	
+	andq %r10, %r10
+	jm $1, %rax
+	rmmovq %r10, (%rsi)
+	ret
+	
+NotOne2:
 	irmovq table, %rcx
 
 	addq %rbp, %rbp
@@ -116,12 +128,12 @@ Rem:
 	pushq %rcx
 	mrmovq (%rdi), %r14
 	mrmovq 8(%rdi), %r13
-	mrmovq 16(%rdi), %r12
-	mrmovq 24(%rdi), %r11
-	mrmovq 32(%rdi), %r10
-	mrmovq 40(%rdi), %r9
-	mrmovq 48(%rdi), %r8
-	mrmovq 56(%rdi), %rbx
+#	mrmovq 16(%rdi), %r12
+#	mrmovq 24(%rdi), %r11
+#	mrmovq 32(%rdi), %r10
+#	mrmovq 40(%rdi), %r9
+#	mrmovq 48(%rdi), %r8
+#	mrmovq 56(%rdi), %rbx
 	ret
 
 table:
@@ -134,16 +146,41 @@ table:
 	.quad L7
 	.quad L8
 
-L8: jmp S8
-L7:	jmp S7
-L6: jmp S6
-L5: jmp S5
-L4: jmp S4
-L3: jmp S3
+L8:
+	mrmovq 16(%rdi), %r12
+	mrmovq 24(%rdi), %r11
+	mrmovq 32(%rdi), %r10
+	mrmovq 40(%rdi), %r9
+	mrmovq 48(%rdi), %r8
+	mrmovq 56(%rdi), %rbx 
+	jmp S8    # 8 elements remain
+L7:	
+	mrmovq 16(%rdi), %r12
+	mrmovq 24(%rdi), %r11
+	mrmovq 32(%rdi), %r10
+	mrmovq 40(%rdi), %r9
+	mrmovq 48(%rdi), %r8
+	jmp S7
+L6: 
+	mrmovq 16(%rdi), %r12
+	mrmovq 24(%rdi), %r11
+	mrmovq 32(%rdi), %r10
+	mrmovq 40(%rdi), %r9
+	jmp S6
+L5: 
+	mrmovq 16(%rdi), %r12
+	mrmovq 24(%rdi), %r11
+	mrmovq 32(%rdi), %r10
+	jmp S5
+L4: 
+	mrmovq 16(%rdi), %r12
+	mrmovq 24(%rdi), %r11
+	jmp S4
+L3: 
+	mrmovq 16(%rdi), %r12
+	jmp S3
 L2: jmp S2
 L1: jmp S1
-
-
 
 Orig:
 	andq %rdx,%rdx		# len <= 0?

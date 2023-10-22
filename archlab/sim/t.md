@@ -74,3 +74,5 @@ cd ../ptest; make SIM=../pipe/psim TFLAGS=-i; cd ../pipe  # if iaddq implemented
 `iaddq` added: 12.70 -> 12.62
 
 条件加法：11.19
+
+特判优化：7.93

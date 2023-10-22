@@ -19,66 +19,80 @@
                             | ##################################################################
                             | # You can modify this portion
                             | 	# Loop header	
-0x000: e0f07402000000000000 | 	jm Orig, %rax
-0x00a: c0f2f7ffffffffffffff | 	iaddq $-9, %rdx
-0x014: 6222                 | 	andq %rdx, %rdx		# len <= 0?
-0x016: 726601000000000000   | 	jl Rem		# if so, goto Rem:
-0x01f:                      | Loop:	
-0x01f: 50e70000000000000000 | 	mrmovq (%rdi), %r14
-0x029: 50d70800000000000000 | 	mrmovq 8(%rdi), %r13
-0x033: 50c71000000000000000 | 	mrmovq 16(%rdi), %r12
-0x03d: 50b71800000000000000 | 	mrmovq 24(%rdi), %r11
-0x047: 50a72000000000000000 | 	mrmovq 32(%rdi), %r10
-0x051: 50972800000000000000 | 	mrmovq 40(%rdi), %r9
-0x05b: 50873000000000000000 | 	mrmovq 48(%rdi), %r8
-0x065: 50373800000000000000 | 	mrmovq 56(%rdi), %rbx
-0x06f: 50174000000000000000 | 	mrmovq 64(%rdi), %rcx
+0x000: 30fe7403000000000000 | 	irmovq Orig, %r14
+0x00a: a0ef                 | 	pushq %r14
+0x00c: e0f40000000000000000 | 	jm $0, %rsp
                             | 
-0x079: c0f74800000000000000 | 	iaddq $72, %rdi		# src++
+0x016: c0f2ffffffffffffffff | 	iaddq $-1, %rdx
+0x020: 744a00000000000000   | 	jne NotOne
                             | 
-0x083: 40164000000000000000 | 	rmmovq %rcx, 64(%rsi)	# ...and store it to dst
-0x08d: 6211                 | 	andq %rcx, %rcx		# val <= 0?
-0x08f: e0f00100000000000000 | 	jm $1, %rax		
-0x099:                      | S8:
-0x099: 40363800000000000000 | 	rmmovq %rbx, 56(%rsi)
-0x0a3: 6233                 | 	andq %rbx, %rbx
-0x0a5: e0f00100000000000000 | 	jm $1, %rax		
-0x0af:                      | S7:
-0x0af: 40863000000000000000 | 	rmmovq %r8, 48(%rsi)
-0x0b9: 6288                 | 	andq %r8, %r8
-0x0bb: e0f00100000000000000 | 	jm $1, %rax
-0x0c5:                      | S6:
-0x0c5: 40962800000000000000 | 	rmmovq %r9, 40(%rsi)
-0x0cf: 6299                 | 	andq %r9, %r9
-0x0d1: e0f00100000000000000 | 	jm $1, %rax
-0x0db:                      | S5:
-0x0db: 40a62000000000000000 | 	rmmovq %r10, 32(%rsi)
-0x0e5: 62aa                 | 	andq %r10, %r10
-0x0e7: e0f00100000000000000 | 	jm $1, %rax
-0x0f1:                      | S4:
-0x0f1: 40b61800000000000000 | 	rmmovq %r11, 24(%rsi)
-0x0fb: 62bb                 | 	andq %r11, %r11
-0x0fd: e0f00100000000000000 | 	jm $1, %rax
-0x107:                      | S3:
-0x107: 40c61000000000000000 | 	rmmovq %r12, 16(%rsi)
-0x111: 62cc                 | 	andq %r12, %r12
-0x113: e0f00100000000000000 | 	jm $1, %rax
-0x11d:                      | S2:
-0x11d: 40d60800000000000000 | 	rmmovq %r13, 8(%rsi)
-0x127: 62dd                 | 	andq %r13, %r13
-0x129: e0f00100000000000000 | 	jm $1, %rax
-0x133:                      | S1:
-0x133: 40e60000000000000000 | 	rmmovq %r14, (%rsi)
-0x13d: 62ee                 | 	andq %r14, %r14
-0x13f: e0f00100000000000000 | 	jm $1, %rax
+0x029:                      | One:
+0x029: 50a70000000000000000 | 	mrmovq (%rdi), %r10	
+0x033: 62aa                 | 	andq %r10, %r10
+0x035: e0f00100000000000000 | 	jm $1, %rax
+0x03f: 40a60000000000000000 | 	rmmovq %r10, (%rsi)
+0x049: 90                   | 	ret
                             | 
-0x149: c0f64800000000000000 | 	iaddq $72, %rsi		# dst++
-0x153: c0f2f7ffffffffffffff | 	iaddq $-9, %rdx		# len--
-0x15d: 751f00000000000000   | 	jge Loop			# if so, goto Loop:
+0x04a:                      | NotOne:
+0x04a: c0f2f8ffffffffffffff | 	iaddq $-8, %rdx
+0x054: 6222                 | 	andq %rdx, %rdx		# len <= 0?
+0x056: 72a601000000000000   | 	jl Rem		# if so, goto Rem:
+0x05f:                      | Loop:	
+0x05f: 50e70000000000000000 | 	mrmovq (%rdi), %r14
+0x069: 50d70800000000000000 | 	mrmovq 8(%rdi), %r13
+0x073: 50c71000000000000000 | 	mrmovq 16(%rdi), %r12
+0x07d: 50b71800000000000000 | 	mrmovq 24(%rdi), %r11
+0x087: 50a72000000000000000 | 	mrmovq 32(%rdi), %r10
+0x091: 50972800000000000000 | 	mrmovq 40(%rdi), %r9
+0x09b: 50873000000000000000 | 	mrmovq 48(%rdi), %r8
+0x0a5: 50373800000000000000 | 	mrmovq 56(%rdi), %rbx
+0x0af: 50174000000000000000 | 	mrmovq 64(%rdi), %rcx
                             | 
-0x166:                      | Rem:
-0x166: 2025                 | 	rrmovq %rdx, %rbp
-0x168: c0f50800000000000000 | 	iaddq $8, %rbp
+0x0b9: c0f74800000000000000 | 	iaddq $72, %rdi		# src++
+                            | 
+0x0c3: 40164000000000000000 | 	rmmovq %rcx, 64(%rsi)	# ...and store it to dst
+0x0cd: 6211                 | 	andq %rcx, %rcx		# val <= 0?
+0x0cf: e0f00100000000000000 | 	jm $1, %rax		
+0x0d9:                      | S8:
+0x0d9: 40363800000000000000 | 	rmmovq %rbx, 56(%rsi)
+0x0e3: 6233                 | 	andq %rbx, %rbx
+0x0e5: e0f00100000000000000 | 	jm $1, %rax		
+0x0ef:                      | S7:
+0x0ef: 40863000000000000000 | 	rmmovq %r8, 48(%rsi)
+0x0f9: 6288                 | 	andq %r8, %r8
+0x0fb: e0f00100000000000000 | 	jm $1, %rax
+0x105:                      | S6:
+0x105: 40962800000000000000 | 	rmmovq %r9, 40(%rsi)
+0x10f: 6299                 | 	andq %r9, %r9
+0x111: e0f00100000000000000 | 	jm $1, %rax
+0x11b:                      | S5:
+0x11b: 40a62000000000000000 | 	rmmovq %r10, 32(%rsi)
+0x125: 62aa                 | 	andq %r10, %r10
+0x127: e0f00100000000000000 | 	jm $1, %rax
+0x131:                      | S4:
+0x131: 40b61800000000000000 | 	rmmovq %r11, 24(%rsi)
+0x13b: 62bb                 | 	andq %r11, %r11
+0x13d: e0f00100000000000000 | 	jm $1, %rax
+0x147:                      | S3:
+0x147: 40c61000000000000000 | 	rmmovq %r12, 16(%rsi)
+0x151: 62cc                 | 	andq %r12, %r12
+0x153: e0f00100000000000000 | 	jm $1, %rax
+0x15d:                      | S2:
+0x15d: 40d60800000000000000 | 	rmmovq %r13, 8(%rsi)
+0x167: 62dd                 | 	andq %r13, %r13
+0x169: e0f00100000000000000 | 	jm $1, %rax
+0x173:                      | S1:
+0x173: 40e60000000000000000 | 	rmmovq %r14, (%rsi)
+0x17d: 62ee                 | 	andq %r14, %r14
+0x17f: e0f00100000000000000 | 	jm $1, %rax
+                            | 
+0x189: c0f64800000000000000 | 	iaddq $72, %rsi		# dst++
+0x193: c0f2f7ffffffffffffff | 	iaddq $-9, %rdx		# len--
+0x19d: 755f00000000000000   | 	jge Loop			# if so, goto Loop:
+                            | 
+0x1a6:                      | Rem:
+0x1a6: 2025                 | 	rrmovq %rdx, %rbp
+0x1a8: c0f50800000000000000 | 	iaddq $8, %rbp
                             | 	# (9 + rdx) elements remain
                             | 	# switch (rbp) {
                             | 	# case 0:
@@ -89,70 +103,108 @@
                             | 	# case 7:
                             | 	# 	goto Eight;
                             | 	# }
-0x172: 6255                 | 	andq %rbp, %rbp
-0x174: 72cd02000000000000   | 	jl Done    # len <= -9, Done
-0x17d: 30f1ec01000000000000 | 	irmovq table, %rcx
+0x1b2: 6255                 | 	andq %rbp, %rbp
+0x1b4: 72d103000000000000   | 	jl Done    # len <= -9, Done
+0x1bd: 74e701000000000000   | 	jne NotOne2
                             | 
-0x187: 6055                 | 	addq %rbp, %rbp
-0x189: 6055                 | 	addq %rbp, %rbp
-0x18b: 6055                 | 	addq %rbp, %rbp
+0x1c6:                      | One2:
+0x1c6: 50a70000000000000000 | 	mrmovq (%rdi), %r10	
+0x1d0: 62aa                 | 	andq %r10, %r10
+0x1d2: e0f00100000000000000 | 	jm $1, %rax
+0x1dc: 40a60000000000000000 | 	rmmovq %r10, (%rsi)
+0x1e6: 90                   | 	ret
+                            | 	
+0x1e7:                      | NotOne2:
+0x1e7: 30f11a02000000000000 | 	irmovq table, %rcx
                             | 
-0x18d: 6051                 | 	addq %rbp, %rcx
-0x18f: 50110000000000000000 | 	mrmovq (%rcx), %rcx
-0x199: a01f                 | 	pushq %rcx
-0x19b: 50e70000000000000000 | 	mrmovq (%rdi), %r14
-0x1a5: 50d70800000000000000 | 	mrmovq 8(%rdi), %r13
-0x1af: 50c71000000000000000 | 	mrmovq 16(%rdi), %r12
-0x1b9: 50b71800000000000000 | 	mrmovq 24(%rdi), %r11
-0x1c3: 50a72000000000000000 | 	mrmovq 32(%rdi), %r10
-0x1cd: 50972800000000000000 | 	mrmovq 40(%rdi), %r9
-0x1d7: 50873000000000000000 | 	mrmovq 48(%rdi), %r8
-0x1e1: 50373800000000000000 | 	mrmovq 56(%rdi), %rbx
-0x1eb: 90                   | 	ret
+0x1f1: 6055                 | 	addq %rbp, %rbp
+0x1f3: 6055                 | 	addq %rbp, %rbp
+0x1f5: 6055                 | 	addq %rbp, %rbp
                             | 
-0x1ec:                      | table:
-0x1ec: 6b02000000000000     | 	.quad L1
-0x1f4: 6202000000000000     | 	.quad L2
-0x1fc: 5902000000000000     | 	.quad L3
-0x204: 5002000000000000     | 	.quad L4
-0x20c: 4702000000000000     | 	.quad L5
-0x214: 3e02000000000000     | 	.quad L6
-0x21c: 3502000000000000     | 	.quad L7
-0x224: 2c02000000000000     | 	.quad L8
+0x1f7: 6051                 | 	addq %rbp, %rcx
+0x1f9: 50110000000000000000 | 	mrmovq (%rcx), %rcx
+0x203: a01f                 | 	pushq %rcx
+0x205: 50e70000000000000000 | 	mrmovq (%rdi), %r14
+0x20f: 50d70800000000000000 | 	mrmovq 8(%rdi), %r13
+                            | #	mrmovq 16(%rdi), %r12
+                            | #	mrmovq 24(%rdi), %r11
+                            | #	mrmovq 32(%rdi), %r10
+                            | #	mrmovq 40(%rdi), %r9
+                            | #	mrmovq 48(%rdi), %r8
+                            | #	mrmovq 56(%rdi), %rbx
+0x219: 90                   | 	ret
                             | 
-0x22c: 709900000000000000   | L8: jmp S8
-0x235: 70af00000000000000   | L7:	jmp S7
-0x23e: 70c500000000000000   | L6: jmp S6
-0x247: 70db00000000000000   | L5: jmp S5
-0x250: 70f100000000000000   | L4: jmp S4
-0x259: 700701000000000000   | L3: jmp S3
-0x262: 701d01000000000000   | L2: jmp S2
-0x26b: 703301000000000000   | L1: jmp S1
+0x21a:                      | table:
+0x21a: 6b03000000000000     | 	.quad L1
+0x222: 6203000000000000     | 	.quad L2
+0x22a: 4f03000000000000     | 	.quad L3
+0x232: 3203000000000000     | 	.quad L4
+0x23a: 0b03000000000000     | 	.quad L5
+0x242: da02000000000000     | 	.quad L6
+0x24a: 9f02000000000000     | 	.quad L7
+0x252: 5a02000000000000     | 	.quad L8
                             | 
-0x274:                      | Orig:
-0x274: 6222                 | 	andq %rdx,%rdx		# len <= 0?
-0x276: 71cd02000000000000   | 	jle Done		# if so, goto Done:
+0x25a:                      | L8:
+0x25a: 50c71000000000000000 | 	mrmovq 16(%rdi), %r12
+0x264: 50b71800000000000000 | 	mrmovq 24(%rdi), %r11
+0x26e: 50a72000000000000000 | 	mrmovq 32(%rdi), %r10
+0x278: 50972800000000000000 | 	mrmovq 40(%rdi), %r9
+0x282: 50873000000000000000 | 	mrmovq 48(%rdi), %r8
+0x28c: 50373800000000000000 | 	mrmovq 56(%rdi), %rbx 
+0x296: 70d900000000000000   | 	jmp S8    # 8 elements remain
+0x29f:                      | L7:	
+0x29f: 50c71000000000000000 | 	mrmovq 16(%rdi), %r12
+0x2a9: 50b71800000000000000 | 	mrmovq 24(%rdi), %r11
+0x2b3: 50a72000000000000000 | 	mrmovq 32(%rdi), %r10
+0x2bd: 50972800000000000000 | 	mrmovq 40(%rdi), %r9
+0x2c7: 50873000000000000000 | 	mrmovq 48(%rdi), %r8
+0x2d1: 70ef00000000000000   | 	jmp S7
+0x2da:                      | L6: 
+0x2da: 50c71000000000000000 | 	mrmovq 16(%rdi), %r12
+0x2e4: 50b71800000000000000 | 	mrmovq 24(%rdi), %r11
+0x2ee: 50a72000000000000000 | 	mrmovq 32(%rdi), %r10
+0x2f8: 50972800000000000000 | 	mrmovq 40(%rdi), %r9
+0x302: 700501000000000000   | 	jmp S6
+0x30b:                      | L5: 
+0x30b: 50c71000000000000000 | 	mrmovq 16(%rdi), %r12
+0x315: 50b71800000000000000 | 	mrmovq 24(%rdi), %r11
+0x31f: 50a72000000000000000 | 	mrmovq 32(%rdi), %r10
+0x329: 701b01000000000000   | 	jmp S5
+0x332:                      | L4: 
+0x332: 50c71000000000000000 | 	mrmovq 16(%rdi), %r12
+0x33c: 50b71800000000000000 | 	mrmovq 24(%rdi), %r11
+0x346: 703101000000000000   | 	jmp S4
+0x34f:                      | L3: 
+0x34f: 50c71000000000000000 | 	mrmovq 16(%rdi), %r12
+0x359: 704701000000000000   | 	jmp S3
+0x362: 705d01000000000000   | L2: jmp S2
+0x36b: 707301000000000000   | L1: jmp S1
                             | 
-0x27f: 50a70000000000000000 | OLoop:	mrmovq (%rdi), %r10	# read val from src...
-0x289: 40a60000000000000000 | 	rmmovq %r10, (%rsi)	# ...and store it to dst
-0x293: 62aa                 | 	andq %r10, %r10		# val <= 0?
-0x295: 71a802000000000000   | 	jle Npos		# if so, goto Npos:
-0x29e: c0f00100000000000000 | 	iaddq $1, %rax		# count++
-0x2a8: 30fa0100000000000000 | Npos:	irmovq $1, %r10
-0x2b2: 61a2                 | 	subq %r10, %rdx		# len--
-0x2b4: 30fa0800000000000000 | 	irmovq $8, %r10
-0x2be: 60a7                 | 	addq %r10, %rdi		# src++
-0x2c0: 60a6                 | 	addq %r10, %rsi		# dst++
-0x2c2: 6222                 | 	andq %rdx,%rdx		# len > 0?
-0x2c4: 767f02000000000000   | 	jg OLoop			# if so, goto Loop:
+0x374:                      | Orig:
+0x374: 6222                 | 	andq %rdx,%rdx		# len <= 0?
+0x376: 71d103000000000000   | 	jle Done		# if so, goto Done:
+                            | 
+0x37f:                      | OLoop:	
+0x37f: 50a70000000000000000 | 	mrmovq (%rdi), %r10	# read val from src...
+0x389: 40a60000000000000000 | 	rmmovq %r10, (%rsi)	# ...and store it to dst
+0x393: 62aa                 | 	andq %r10, %r10		# val <= 0?
+0x395: 71a803000000000000   | 	jle Npos		# if so, goto Npos:
+0x39e: c0f00100000000000000 | 	iaddq $1, %rax		# count++
+0x3a8:                      | Npos:	
+0x3a8: c0f2ffffffffffffffff | 	iaddq $-1, %rdx		# len--
+0x3b2: c0f70800000000000000 | 	iaddq $8, %rdi		# src++
+0x3bc: c0f60800000000000000 | 	iaddq $8, %rsi		# dst++
+0x3c6: 6222                 | 	andq %rdx,%rdx		# len > 0?
+0x3c8: 767f03000000000000   | 	jg OLoop			# if so, goto Loop:
+                            | 
                             | 
                             | 
                             | ##################################################################
                             | # Do not modify the following section of code
                             | # Function epilogue.
-0x2cd:                      | Done:
-0x2cd: 90                   | 	ret
+0x3d1:                      | Done:
+0x3d1: 90                   | 	ret
                             | ##################################################################
                             | # Keep the following label at the end of your function
-0x2ce:                      | End:
+0x3d2:                      | End:
                             | #/* $end ncopy-ys */
