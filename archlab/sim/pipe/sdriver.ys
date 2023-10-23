@@ -34,7 +34,7 @@ ncopy:
 	# fool yis, jump to Orig if with yis, do nothing otherwise	
 	irmovq Orig, %r14
 	pushq %r14
-	jm $0, %rsp
+	jm $0, %rsp    # 0x374
 
 # Special case: len == 1
 	iaddq $-1, %rdx
@@ -118,7 +118,7 @@ Rem:    # handle remainder
 	# case 7:
 	# 	goto Eight;
 	# }
-	andq %rbp, %rbp
+	# andq %rbp, %rbp
 	jl Done    # len <= -9, Done
 	jne NotOne2
 
@@ -138,8 +138,8 @@ NotOne2:
 
 	addq %rbp, %rcx
 	mrmovq (%rcx), %rcx
-	pushq %rcx
 	mrmovq (%rdi), %r14
+	pushq %rcx
 	mrmovq 8(%rdi), %r13
 #	mrmovq 16(%rdi), %r12
 #	mrmovq 24(%rdi), %r11
@@ -193,7 +193,7 @@ L3:
 	mrmovq 16(%rdi), %r12
 	jmp S3
 L2: jmp S2
-L1: jmp S1
+L1: jmp S8
 
 Orig:
 	andq %rdx,%rdx		# len <= 0?
@@ -230,9 +230,9 @@ EndFun:
 ###############################
 	.align 8
 src:
-	.quad 1
+	.quad -1
 	.quad -2
-	.quad -3
+	.quad 3
 	.quad 4
 	.quad 0xbcdefa # This shouldn't get moved
 
