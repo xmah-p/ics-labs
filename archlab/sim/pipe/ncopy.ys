@@ -35,8 +35,7 @@ One: # handle len == 1
 	ret
 
 NotOne:
-	iaddq $-8, %rdx    # By now, rdx decremented by 9
-	andq %rdx, %rdx		
+	iaddq $-8, %rdx    # By now, rdx decremented by 9	
 	jl Rem		# goto remainder handling
 Loop:	
 	mrmovq (%rdi), %r14
@@ -128,12 +127,6 @@ NotOne2:
 	mrmovq (%rdi), %r14
 	pushq %rcx
 	mrmovq 8(%rdi), %r13
-#	mrmovq 16(%rdi), %r12
-#	mrmovq 24(%rdi), %r11
-#	mrmovq 32(%rdi), %r10
-#	mrmovq 40(%rdi), %r9
-#	mrmovq 48(%rdi), %r8
-#	mrmovq 56(%rdi), %rbx
 	ret
 
 table:
