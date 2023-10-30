@@ -1,0 +1,225 @@
+#/* $begin ncopy-ys */
+##################################################################
+# ncopy.ys - Copy a src block of len words to dst.
+# Return the number of positive words (>0) contained in src.
+#
+# Include your name and ID here.
+# Name: 杨艺欣
+# ID: 2200017768
+#
+# Describe how and why you modified the baseline code.
+
+# Added iaddq and jm. jm is implemented as **iaddqg**, which only
+# performs the addition when CC meets the "g" condition.
+
+# The starting 3 lines are added to fool yis. It jumps to Orig
+# (the original code) if is runing with yis, and does nothing otherwise.
+# Then, the program handles len==1 as a special case.
+
+# The main loop is unrolled by 9. 
+# We decrement len by 9 before entering the loop, and use len<0
+# as a jump out condition. 
+
+# Rem section handles the remainder. We use a jump table to reuse the
+# lines in the main loop. 
+# Before entering the jump table, there is also a special case handling
+# for len==1.
+
+# More details are commented in the code below.
+# 
+##################################################################
+# Do not modify this portion
+# Function prologue.
+# %rdi = src, %rsi = dst, %rdx = len
+ncopy:
+
+##################################################################
+# You can modify this portion
+	# fool yis, jump to Orig if with yis, do nothing otherwise	
+	irmovq Orig, %r14
+	pushq %r14
+	jm $0, %rsp    # 0x374
+
+# Special case: len == 1
+	iaddq $-1, %rdx
+	jne NotOne
+
+One: # handle len == 1
+	mrmovq (%rdi), %r10	
+	andq %r10, %r10
+	jm $1, %rax
+	rmmovq %r10, (%rsi)
+	ret
+
+NotOne:
+	iaddq $-8, %rdx    # By now, rdx decremented by 9	
+	jl Rem		# goto remainder handling
+Loop:	
+	mrmovq (%rdi), %r14
+	mrmovq 8(%rdi), %r13
+	mrmovq 16(%rdi), %r12
+	mrmovq 24(%rdi), %r11
+	mrmovq 32(%rdi), %r10
+	mrmovq 40(%rdi), %r9
+	mrmovq 48(%rdi), %r8
+	mrmovq 56(%rdi), %rbx
+	mrmovq 64(%rdi), %rcx    # 9-way loop unrolling
+
+	iaddq $72, %rdi		# update src
+
+# write to dst, update count
+	rmmovq %rcx, 64(%rsi)
+	andq %rcx, %rcx		
+	jm $1, %rax		
+S8:    # S8~S1 is jump destinations for the jump table
+	rmmovq %rbx, 56(%rsi)
+	andq %rbx, %rbx
+	jm $1, %rax		
+S7:
+	rmmovq %r8, 48(%rsi)
+	andq %r8, %r8
+	jm $1, %rax
+S6:
+	rmmovq %r9, 40(%rsi)
+	andq %r9, %r9
+	jm $1, %rax
+S5:
+	rmmovq %r10, 32(%rsi)
+	andq %r10, %r10
+	jm $1, %rax
+S4:
+	rmmovq %r11, 24(%rsi)
+	andq %r11, %r11
+	jm $1, %rax
+S3:
+	rmmovq %r12, 16(%rsi)
+	andq %r12, %r12
+	jm $1, %rax
+S2:
+	rmmovq %r13, 8(%rsi)
+	andq %r13, %r13
+	jm $1, %rax
+S1:
+	rmmovq %r14, (%rsi)
+	andq %r14, %r14
+	jm $1, %rax
+
+	iaddq $72, %rsi		# update dst
+	iaddq $-9, %rdx		# update len
+	jge Loop			# goto Loop:
+
+Rem:    # handle remainder
+	rrmovq %rdx, %rbp    # rbp = len
+	iaddq $8, %rbp
+	jl Done    # len <= -9 means nothing left. Done.
+	jne NotOne2
+
+	# there's (9 + rdx) elements remaining.
+	# switch (rbp) {
+	# case 0:
+	# 	goto One;    
+	# case 1:
+	# 	goto Two;
+	# ...
+	# case 7:
+	# 	goto Eight;
+	# }
+
+
+One2:    # special case for len == 9k+1
+	mrmovq (%rdi), %r10	
+	andq %r10, %r10
+	jm $1, %rax
+	rmmovq %r10, (%rsi)
+	ret
+	
+NotOne2:
+	irmovq table, %rcx    # rcx stores the addr. of jump table
+
+	addq %rbp, %rbp
+	addq %rbp, %rbp
+	addq %rbp, %rbp  
+
+	addq %rbp, %rcx    # dest is (rcx, rbp, 8)
+
+	mrmovq (%rcx), %rcx  # addr. of jump destination
+	mrmovq (%rdi), %r14
+	pushq %rcx  
+	mrmovq 8(%rdi), %r13    # fetch 2 elements in advance
+	ret     # jump
+
+table:
+	.quad L1
+	.quad L2
+	.quad L3
+	.quad L4
+	.quad L5
+	.quad L6
+	.quad L7
+	.quad L8
+
+L8:    # 8 elements remaining
+	mrmovq 16(%rdi), %r12
+	mrmovq 24(%rdi), %r11
+	mrmovq 32(%rdi), %r10
+	mrmovq 40(%rdi), %r9
+	mrmovq 48(%rdi), %r8
+	mrmovq 56(%rdi), %rbx 
+	jmp S8    
+L7:	
+	mrmovq 16(%rdi), %r12
+	mrmovq 24(%rdi), %r11
+	mrmovq 32(%rdi), %r10
+	mrmovq 40(%rdi), %r9
+	mrmovq 48(%rdi), %r8
+	jmp S7
+L6: 
+	mrmovq 16(%rdi), %r12
+	mrmovq 24(%rdi), %r11
+	mrmovq 32(%rdi), %r10
+	mrmovq 40(%rdi), %r9
+	jmp S6
+L5: 
+	mrmovq 16(%rdi), %r12
+	mrmovq 24(%rdi), %r11
+	mrmovq 32(%rdi), %r10
+	jmp S5
+L4: 
+	mrmovq 16(%rdi), %r12
+	mrmovq 24(%rdi), %r11
+	jmp S4
+L3: 
+	mrmovq 16(%rdi), %r12
+	jmp S3
+L2: jmp S2
+L1: jmp S1    # not used
+
+# Original code. Not used when running without yis.
+Orig:
+	andq %rdx,%rdx		# len <= 0?
+	jle Done		# if so, goto Done:
+
+OLoop:	
+	mrmovq (%rdi), %r10	# read val from src...
+	rmmovq %r10, (%rsi)	# ...and store it to dst
+	andq %r10, %r10		# val <= 0?
+	jle Npos		# if so, goto Npos:
+	iaddq $1, %rax		# count++
+Npos:	
+	iaddq $-1, %rdx		# len--
+	iaddq $8, %rdi		# src++
+	iaddq $8, %rsi		# dst++
+	andq %rdx,%rdx		# len > 0?
+	jg OLoop			# if so, goto Loop:
+
+
+
+##################################################################
+# Do not modify the following section of code
+# Function epilogue.
+Done:
+	ret
+##################################################################
+# Keep the following label at the end of your function
+End:
+#/* $end ncopy-ys */

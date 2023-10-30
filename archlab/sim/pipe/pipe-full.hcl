@@ -1,9 +1,12 @@
 # 杨艺欣
 # 2200017768
 
-# jm is implemented as iaddqg, i.e., 
-# it only performs addition when CC meets the condition "g", 
+# iaddq is implemented as defined in writeup.
 
+# jm is implemented as iaddqg, i.e., 
+# it only performs addition when CC meets the condition "g".
+
+# Nothing else is changed.
 
 
 

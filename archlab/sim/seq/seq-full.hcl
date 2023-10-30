@@ -3,27 +3,41 @@
 # Description of IADDQ
 
 # Stage        		IADDQ V, rB
+#
 # Fetch  		icode:ifun <- M_1[PC]
 # 				rA:rB <- M_1[PC+1]
 # 				valC <- M_8[PC+2]
 # 				valP <- PC+10
+#
 # Decode 		valB <- R[rB]
+#
 # Execute 		valE <- valB + valC
 #               Set CC
+#
 # Memory 		\
+#
 # Write back 	R[rB] <- valE
+#
 # PC update 	PC <- valP
 
+
 # Description of JM
-# State 	  	    JM rB, V
+
+# Stage 	  	    JM rB, V
+#
 # Fetch  		icode:ifun <- M_1[PC]
 # 				rA:rB <- M_1[PC+1]
 # 				valC <- M_8[PC+2]
 # 				valP <- PC+10
+#
 # Decode 		valB <- R[rB]
+#
 # Execute 		valE <- valB + valC
+#
 # Memory 		valM <- M_8[valE]
+#
 # Write back 	\
+#
 # PC update 	PC <- valM
 
 
