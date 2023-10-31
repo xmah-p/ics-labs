@@ -68,16 +68,42 @@ void trans64(int M, int N, int A[N][M], int B[M][N]) {
 
 char trans60_68_desc[] = "60*68 specialized transpose";
 void trans60_68(int M, int N, int A[N][M], int B[M][N]) {
-    for (int k = 0; k < N; k += 4) {
-        for (int l = 0; l < M; l += 4) {
-            for (int i = k; i < k + 4; i++) {
-                int t0 = A[i][l], t1 = A[i][l + 1], t2 = A[i][l + 2],
-                    t3 = A[i][l + 3];
-                B[l][i] = t0;
-                B[l + 1][i] = t1;
-                B[l + 2][i] = t2;
-                B[l + 3][i] = t3;
+    for (int k = 0; k < 64; k += 16) {
+        for (int l = 0; l < 60; l += 4) {
+            for (int i = l; i < l + 4; i++) {
+                int t0 = A[k][i], t1 = A[k + 1][i], t2 = A[k + 2][i],
+                    t3 = A[k + 3][i], t4 = A[k + 4][i], t5 = A[k + 5][i],
+                    t6 = A[k + 6][i], t7 = A[k + 7][i];
+                B[i][k] = t0;
+                B[i][k + 1] = t1;
+                B[i][k + 2] = t2;
+                B[i][k + 3] = t3;
+                B[i][k + 4] = t4;
+                B[i][k + 5] = t5;
+                B[i][k + 6] = t6;
+                B[i][k + 7] = t7;
+                t0 = A[k + 8][i], t1 = A[k + 9][i], t2 = A[k + 10][i],
+                t3 = A[k + 11][i], t4 = A[k + 12][i], t5 = A[k + 13][i],
+                t6 = A[k + 14][i], t7 = A[k + 15][i];
+                B[i][k + 8] = t0;
+                B[i][k + 9] = t1;
+                B[i][k + 10] = t2;
+                B[i][k + 11] = t3;
+                B[i][k + 12] = t4;
+                B[i][k + 13] = t5;
+                B[i][k + 14] = t6;
+                B[i][k + 15] = t7;
             }
+        }
+    }
+    for (int l = 0; l < 64; l += 4) {
+        for (int i = l; i < l + 4; i++) {
+            int t0 = A[64][i], t1 = A[64 + 1][i], t2 = A[64 + 2][i],
+                t3 = A[64 + 3][i];
+            B[i][64] = t0;
+            B[i][64 + 1] = t1;
+            B[i][64 + 2] = t2;
+            B[i][64 + 3] = t3;
         }
     }
 }
