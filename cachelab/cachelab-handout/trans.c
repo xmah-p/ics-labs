@@ -46,20 +46,21 @@ void trans32(int M, int N, int A[N][M], int B[M][N]) {
 
 char trans64_desc[] = "64*64 specialized transpose";
 void trans64(int M, int N, int A[N][M], int B[M][N]) {
-    for (int k = 0; k < N; k += 8) {
-        for (int l = 0; l < M; l += 8) {
-            for (int i = k; i < k + 8; i++) {
+    for (int k = 0; k < N; k += 4) {
+        for (int l = 0; l < M; l += 4) {
+            for (int i = k; i < k + 4; i++) {
                 int t0 = A[i][l], t1 = A[i][l + 1], t2 = A[i][l + 2],
-                    t3 = A[i][l + 3], t4 = A[i][l + 4], t5 = A[i][l + 5],
-                    t6 = A[i][l + 6], t7 = A[i][l + 7];
+                    t3 = A[i][l + 3];
+                // int t4 = A[i][l + 4], t5 = A[i][l + 5], t6 = A[i][l + 6],
+                //     t7 = A[i][l + 7];
                 B[l][i] = t0;
                 B[l + 1][i] = t1;
                 B[l + 2][i] = t2;
                 B[l + 3][i] = t3;
-                B[l + 4][i] = t4;
-                B[l + 5][i] = t5;
-                B[l + 6][i] = t6;
-                B[l + 7][i] = t7;
+                // B[l + 4][i] = t4;
+                // B[l + 5][i] = t5;
+                // B[l + 6][i] = t6;
+                // B[l + 7][i] = t7;
             }
         }
     }
@@ -67,20 +68,15 @@ void trans64(int M, int N, int A[N][M], int B[M][N]) {
 
 char trans60_68_desc[] = "60*68 specialized transpose";
 void trans60_68(int M, int N, int A[N][M], int B[M][N]) {
-    for (int k = 0; k < 64; k += 8) {
-        for (int l = 0; l < 56; l += 8) {
-            for (int i = k; i < k + 8; i++) {
+    for (int k = 0; k < N; k += 4) {
+        for (int l = 0; l < M; l += 4) {
+            for (int i = k; i < k + 4; i++) {
                 int t0 = A[i][l], t1 = A[i][l + 1], t2 = A[i][l + 2],
-                    t3 = A[i][l + 3], t4 = A[i][l + 4], t5 = A[i][l + 5],
-                    t6 = A[i][l + 6], t7 = A[i][l + 7];
+                    t3 = A[i][l + 3];
                 B[l][i] = t0;
                 B[l + 1][i] = t1;
                 B[l + 2][i] = t2;
                 B[l + 3][i] = t3;
-                B[l + 4][i] = t4;
-                B[l + 5][i] = t5;
-                B[l + 6][i] = t6;
-                B[l + 7][i] = t7;
             }
         }
     }
