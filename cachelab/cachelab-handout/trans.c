@@ -25,55 +25,16 @@ int is_transpose(int M, int N, int A[N][M], int B[M][N]);
 
 char trans32_desc[] = "32*32 specialized transpose";
 void trans32(int M, int N, int A[N][M], int B[M][N]) {
-    for (int k = 0; k < N; k += 8) {
-        for (int l = 0; l < M; l += 8) {
-            for (int i = k; i < k + 8; i++) {
-                int t0 = A[i][l], t1 = A[i][l + 1], t2 = A[i][l + 2],
-                    t3 = A[i][l + 3], t4 = A[i][l + 4], t5 = A[i][l + 5],
-                    t6 = A[i][l + 6], t7 = A[i][l + 7];
-                B[l][i] = t0;
-                B[l + 1][i] = t1;
-                B[l + 2][i] = t2;
-                B[l + 3][i] = t3;
-                B[l + 4][i] = t4;
-                B[l + 5][i] = t5;
-                B[l + 6][i] = t6;
-                B[l + 7][i] = t7;
-            }
-        }
-    }
-}
+    int k, l, i;
+    int t0, t1, t2, t3, t4, t5, t6, t7;
 
-char trans64_desc[] = "64*64 specialized transpose";
-void trans64(int M, int N, int A[N][M], int B[M][N]) {
-    for (int k = 0; k < N; k += 4) {
-        for (int l = 0; l < M; l += 4) {
-            for (int i = k; i < k + 4; i++) {
-                int t0 = A[i][l], t1 = A[i][l + 1], t2 = A[i][l + 2],
-                    t3 = A[i][l + 3];
-                // int t4 = A[i][l + 4], t5 = A[i][l + 5], t6 = A[i][l + 6],
-                //     t7 = A[i][l + 7];
-                B[l][i] = t0;
-                B[l + 1][i] = t1;
-                B[l + 2][i] = t2;
-                B[l + 3][i] = t3;
-                // B[l + 4][i] = t4;
-                // B[l + 5][i] = t5;
-                // B[l + 6][i] = t6;
-                // B[l + 7][i] = t7;
-            }
-        }
-    }
-}
-
-char trans60_68_desc[] = "60*68 specialized transpose";
-void trans60_68(int M, int N, int A[N][M], int B[M][N]) {
-    for (int k = 0; k < 64; k += 16) {
-        for (int l = 0; l < 60; l += 4) {
-            for (int i = l; i < l + 4; i++) {
-                int t0 = A[k][i], t1 = A[k + 1][i], t2 = A[k + 2][i],
-                    t3 = A[k + 3][i], t4 = A[k + 4][i], t5 = A[k + 5][i],
-                    t6 = A[k + 6][i], t7 = A[k + 7][i];
+    // 8 * 8 blocks
+    for (k = 0; k < N; k += 8) {
+        for (l = 0; l < M; l += 8) {
+            for (i = l; i < l + 8; i++) {
+                t0 = A[k][i], t1 = A[k + 1][i], t2 = A[k + 2][i],
+                t3 = A[k + 3][i], t4 = A[k + 4][i], t5 = A[k + 5][i],
+                t6 = A[k + 6][i], t7 = A[k + 7][i];
                 B[i][k] = t0;
                 B[i][k + 1] = t1;
                 B[i][k + 2] = t2;
@@ -82,24 +43,100 @@ void trans60_68(int M, int N, int A[N][M], int B[M][N]) {
                 B[i][k + 5] = t5;
                 B[i][k + 6] = t6;
                 B[i][k + 7] = t7;
-                t0 = A[k + 8][i], t1 = A[k + 9][i], t2 = A[k + 10][i],
-                t3 = A[k + 11][i], t4 = A[k + 12][i], t5 = A[k + 13][i],
-                t6 = A[k + 14][i], t7 = A[k + 15][i];
-                B[i][k + 8] = t0;
-                B[i][k + 9] = t1;
-                B[i][k + 10] = t2;
-                B[i][k + 11] = t3;
-                B[i][k + 12] = t4;
-                B[i][k + 13] = t5;
-                B[i][k + 14] = t6;
-                B[i][k + 15] = t7;
             }
         }
     }
-    for (int l = 0; l < 64; l += 4) {
-        for (int i = l; i < l + 4; i++) {
-            int t0 = A[64][i], t1 = A[64 + 1][i], t2 = A[64 + 2][i],
-                t3 = A[64 + 3][i];
+}
+
+char trans64_desc[] = "64*64 specialized transpose";
+void trans64(int M, int N, int A[N][M], int B[M][N]) {
+    int k, l, i;
+    int t0, t1, t2, t3, t4, t5, t6, t7;
+
+    // 8 * 8 blocks
+    for (k = 0; k < N; k += 8) {
+        for (l = 0; l < M; l += 8) {
+            // top left 4 * 4 block
+            for (i = l; i < l + 4; i++) {
+                t0 = A[k][i], t1 = A[k + 1][i], t2 = A[k + 2][i],
+                t3 = A[k + 3][i];
+
+                // now A[k][i+4]~A[k+3][i+4] are cached
+                // store A[k][i+4]~A[k+3][i+4] into B[i][k+4]~B[i][k+7]
+                // so we don't need to reaccess them in the future
+                t4 = A[k][i + 4], t5 = A[k + 1][i + 4], t6 = A[k + 2][i + 4],
+                t7 = A[k + 3][i + 4];
+                B[i][k] = t0;
+                B[i][k + 1] = t1;
+                B[i][k + 2] = t2;
+                B[i][k + 3] = t3;
+
+                B[i][k + 4] = t4;
+                B[i][k + 5] = t5;
+                B[i][k + 6] = t6;
+                B[i][k + 7] = t7;
+            }
+            // top right and bottom left 4 * 4 blocks
+            for (i = l; i < l + 4; i++) {
+                // retrieve A[k][i+4]~A[k+3][i+4] from B[i][k+4]~B[i][k+7]
+                t0 = B[i][k + 4], t1 = B[i][k + 5], t2 = B[i][k + 6],
+                t3 = B[i][k + 7];
+
+                // fill in B[i][k+4]~B[i][k+7]
+                t4 = A[k + 4][i], t5 = A[k + 5][i], t6 = A[k + 6][i],
+                t7 = A[k + 7][i];
+                B[i][k + 4] = t4;
+                B[i][k + 5] = t5;
+                B[i][k + 6] = t6;
+                B[i][k + 7] = t7;
+
+                // fill in B[i+4][k]~B[i+7][k] with retrieved values
+                B[i + 4][k] = t0;
+                B[i + 4][k + 1] = t1;
+                B[i + 4][k + 2] = t2;
+                B[i + 4][k + 3] = t3;
+            }
+            // bottom right 4 * 4 block
+            for (i = l + 4; i < l + 8; i++) {
+                t0 = A[k + 4][i], t1 = A[k + 5][i], t2 = A[k + 6][i],
+                t3 = A[k + 7][i];
+                B[i][k + 4] = t0;
+                B[i][k + 5] = t1;
+                B[i][k + 6] = t2;
+                B[i][k + 7] = t3;
+            }
+        }
+    }
+}
+
+char trans60x68_desc[] = "60*68 specialized transpose";
+void trans60x68(int M, int N, int A[N][M], int B[M][N]) {
+    int k, l, i;
+    int t0, t1, t2, t3, t4, t5, t6, t7;
+
+    // 8 * 4 blocks
+    for (k = 0; k < 64; k += 8) {
+        for (l = 0; l < 60; l += 4) {
+            for (i = l; i < l + 4; i++) {
+                t0 = A[k][i], t1 = A[k + 1][i], t2 = A[k + 2][i],
+                t3 = A[k + 3][i], t4 = A[k + 4][i], t5 = A[k + 5][i],
+                t6 = A[k + 6][i], t7 = A[k + 7][i];
+                B[i][k] = t0;
+                B[i][k + 1] = t1;
+                B[i][k + 2] = t2;
+                B[i][k + 3] = t3;
+                B[i][k + 4] = t4;
+                B[i][k + 5] = t5;
+                B[i][k + 6] = t6;
+                B[i][k + 7] = t7;
+            }
+        }
+    }
+    // handle remaining blocks
+    for (l = 0; l < 64; l += 4) {
+        for (i = l; i < l + 4; i++) {
+            t0 = A[64][i], t1 = A[64 + 1][i], t2 = A[64 + 2][i],
+            t3 = A[64 + 3][i];
             B[i][64] = t0;
             B[i][64 + 1] = t1;
             B[i][64 + 2] = t2;
@@ -107,6 +144,8 @@ void trans60_68(int M, int N, int A[N][M], int B[M][N]) {
         }
     }
 }
+
+void trans(int M, int N, int A[N][M], int B[M][N]);
 
 char transpose_submit_desc[] = "Transpose submission";
 void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
@@ -121,7 +160,10 @@ void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
             trans64(M, N, A, B);
             break;
         case 60:
-            trans60_68(M, N, A, B);
+            trans60x68(M, N, A, B);
+            break;
+        default:
+            trans(M, N, A, B);
             break;
     }
 
@@ -134,7 +176,8 @@ void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
  */
 
 /*
- * trans - A simple baseline transpose function, not optimized for the cache.
+ * trans - A simple baseline transpose function, not optimized for the
+ * cache.
  */
 char trans_desc[] = "Simple row-wise scan transpose";
 void trans(int M, int N, int A[N][M], int B[M][N]) {

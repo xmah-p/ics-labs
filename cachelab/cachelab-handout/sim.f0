@@ -2,7 +2,6 @@ S 10d0e0,1 miss
 L 18d120,8 miss 
 L 18d104,4 miss 
 L 18d100,4 hit 
-
 L 10d100,4 miss eviction 
 L 10d1f0,4 miss 
 L 10d2e0,4 miss 

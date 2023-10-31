@@ -19,7 +19,7 @@ typedef struct {
 
 typedef struct {
     Line* lines;
-    unsigned lru;
+    unsigned lru;  // time counter, increase every time a line is used
 } Set;
 
 typedef struct {
@@ -30,6 +30,7 @@ Cache cache;
 
 int hitCnt = 0, missCnt = 0, evictCnt = 0;
 
+// Initialize cache, allocate memory
 void initCache(void) {
     // Assume that s, E, b have been initialized
     int S = 1 << s;
@@ -54,21 +55,26 @@ void initCache(void) {
  S 50,4
 */
 
+// Do the simulation on cache as described in file
 void simulate(FILE* file, int verbose) {
     char buf[100];
     while (fgets(buf, 100, file)) {
+        // Error check
         if (buf[0] != ' ' || buf[2] != ' ' ||
             (buf[1] != 'L' && buf[1] != 'S' && buf[1] != 'M')) {
             printf("Invalid trace file line: %s", buf);
             fclose(file);
             exit(1);
         }
+
+        // Parse the line
         char op = buf[1];  // L, S, M
         unsigned long long addr;
         int size;
         sscanf(buf + 3, "%llx,%d", &addr, &size);
         if (verbose) printf("%c %llx,%d ", op, addr, size);
 
+        // Parse addr
         int t = 64 - s - b;
         unsigned long long tag = addr >> (s + b);
         unsigned long long setIdx = (addr << t) >> (t + b);
@@ -77,11 +83,11 @@ void simulate(FILE* file, int verbose) {
         // blockOffset);
 
         // Set selection
-        Set* set = &cache.sets[setIdx];  
+        Set* set = &cache.sets[setIdx];
 
         // Line matching
         Line* lines = set->lines;
-        int hit = 0;
+        int hit = 0;  // 0 for miss, 1 for hit
         for (int i = 0; i != E; i++) {
             if (!lines[i].valid || lines[i].tag != tag) continue;
             // hit
@@ -96,6 +102,8 @@ void simulate(FILE* file, int verbose) {
             missCnt++;
             if (verbose) printf("miss ");
             int hasEmpty = 0;
+
+            // if there's empty line, use it
             for (int i = 0; i != E; i++) {
                 if (lines[i].valid) continue;
                 lines[i].valid = 1;
@@ -105,7 +113,7 @@ void simulate(FILE* file, int verbose) {
                 break;
             }
 
-            // Eviction
+            // else evict the LRU line
             if (!hasEmpty) {
                 evictCnt++;
                 if (verbose) printf("eviction ");
@@ -118,7 +126,8 @@ void simulate(FILE* file, int verbose) {
                 lines[minIdx].timestamp = ++(set->lru);
             }
         }
-        
+
+        // Store in M must hit
         if (op == 'M') {
             hitCnt++;
             if (verbose) printf("hit");
@@ -127,8 +136,8 @@ void simulate(FILE* file, int verbose) {
     }
 }
 
+// Parse cmd line args, call initCache, simulate, and print results
 int main(int argc, char* argv[]) {
-    // get the options
     int opt;
     int verbose;
     FILE* tracefile = NULL;
@@ -162,7 +171,7 @@ int main(int argc, char* argv[]) {
                 break;
         }
     }
-    
+
     if (!s || !E || !b || !tracefile) {
         printf("%s: Missing required command line argument\n", argv[0]);
         exit(0);
