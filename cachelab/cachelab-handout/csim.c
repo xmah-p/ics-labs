@@ -31,9 +31,10 @@ Cache cache;
 int hitCnt = 0, missCnt = 0, evictCnt = 0;
 
 void initCache(void) {
-    // assume that s, E, b are already initialized
-    cache.sets = (Set*)malloc(sizeof(Set) * (1 << s));
-    for (int i = 0; i < (1 << s); i++) {
+    // Assume that s, E, b have been initialized
+    int S = 1 << s;
+    cache.sets = (Set*)malloc(sizeof(Set) * S);
+    for (int i = 0; i < S; i++) {
         cache.sets[i].lines = (Line*)malloc(sizeof(Line) * E);
         cache.sets[i].lru = 0;
         for (int j = 0; j < E; j++) {
@@ -122,6 +123,7 @@ void simulate(FILE* file, int verbose) {
             hitCnt++;
             if (verbose) printf("hit");
         }
+        if (verbose) printf("\n");
     }
 }
 
@@ -160,12 +162,15 @@ int main(int argc, char* argv[]) {
                 break;
         }
     }
+    
     if (!s || !E || !b || !tracefile) {
         printf("%s: Missing required command line argument\n", argv[0]);
         exit(0);
     }
+
     initCache();
     simulate(tracefile, verbose);
+
     printSummary(hitCnt, missCnt, evictCnt);
     return 0;
 }

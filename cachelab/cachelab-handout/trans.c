@@ -22,10 +22,86 @@ int is_transpose(int M, int N, int A[N][M], int B[M][N]);
  *     be graded. The REQUIRES and ENSURES from 15-122 are included
  *     for your convenience. They can be removed if you like.
  */
+
+char trans32_desc[] = "32*32 specialized transpose";
+void trans32(int M, int N, int A[N][M], int B[M][N]) {
+    for (int k = 0; k < N; k += 8) {
+        for (int l = 0; l < M; l += 8) {
+            for (int i = k; i < k + 8; i++) {
+                int t0 = A[i][l], t1 = A[i][l + 1], t2 = A[i][l + 2],
+                    t3 = A[i][l + 3], t4 = A[i][l + 4], t5 = A[i][l + 5],
+                    t6 = A[i][l + 6], t7 = A[i][l + 7];
+                B[l][i] = t0;
+                B[l + 1][i] = t1;
+                B[l + 2][i] = t2;
+                B[l + 3][i] = t3;
+                B[l + 4][i] = t4;
+                B[l + 5][i] = t5;
+                B[l + 6][i] = t6;
+                B[l + 7][i] = t7;
+            }
+        }
+    }
+}
+
+char trans64_desc[] = "64*64 specialized transpose";
+void trans64(int M, int N, int A[N][M], int B[M][N]) {
+    for (int k = 0; k < N; k += 8) {
+        for (int l = 0; l < M; l += 8) {
+            for (int i = k; i < k + 8; i++) {
+                int t0 = A[i][l], t1 = A[i][l + 1], t2 = A[i][l + 2],
+                    t3 = A[i][l + 3], t4 = A[i][l + 4], t5 = A[i][l + 5],
+                    t6 = A[i][l + 6], t7 = A[i][l + 7];
+                B[l][i] = t0;
+                B[l + 1][i] = t1;
+                B[l + 2][i] = t2;
+                B[l + 3][i] = t3;
+                B[l + 4][i] = t4;
+                B[l + 5][i] = t5;
+                B[l + 6][i] = t6;
+                B[l + 7][i] = t7;
+            }
+        }
+    }
+}
+
+char trans60_68_desc[] = "60*68 specialized transpose";
+void trans60_68(int M, int N, int A[N][M], int B[M][N]) {
+    for (int k = 0; k < 64; k += 8) {
+        for (int l = 0; l < 56; l += 8) {
+            for (int i = k; i < k + 8; i++) {
+                int t0 = A[i][l], t1 = A[i][l + 1], t2 = A[i][l + 2],
+                    t3 = A[i][l + 3], t4 = A[i][l + 4], t5 = A[i][l + 5],
+                    t6 = A[i][l + 6], t7 = A[i][l + 7];
+                B[l][i] = t0;
+                B[l + 1][i] = t1;
+                B[l + 2][i] = t2;
+                B[l + 3][i] = t3;
+                B[l + 4][i] = t4;
+                B[l + 5][i] = t5;
+                B[l + 6][i] = t6;
+                B[l + 7][i] = t7;
+            }
+        }
+    }
+}
+
 char transpose_submit_desc[] = "Transpose submission";
 void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
     REQUIRES(M > 0);
     REQUIRES(N > 0);
+
+    switch (M) {
+        case 32:
+            trans32(M, N, A, B);
+            break;
+        case 64:
+            trans64(M, N, A, B);
+            break;
+        case 60:
+            trans60_68(M, N, A, B);
+            break;
+    }
 
     ENSURES(is_transpose(M, N, A, B));
 }
