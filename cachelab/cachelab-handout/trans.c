@@ -1,3 +1,5 @@
+// 杨艺欣    2200017768
+
 /*
  * trans.c - Matrix transpose B = A^T
  *
