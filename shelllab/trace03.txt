@@ -1,5 +1,10 @@
 #
-# trace03.txt - Run a foreground job.
+# trace03.txt - Run a synchronizing foreground job without any arguments.
 #
-/bin/echo tsh> quit
+./myspin1
+
+WAIT
+SIGNAL
+
 quit
+

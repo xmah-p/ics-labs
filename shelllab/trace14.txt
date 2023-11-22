@@ -1,47 +1,24 @@
 #
-# trace14.txt - Simple error handling
+# trace14.txt - Forward SIGTSTP to foreground job only.
 #
-/bin/echo tsh> ./bogus
-./bogus
+/bin/echo -e tsh\076 ./myspin1 10 \046
+NEXT
+./myspin1 10 &
+NEXT
 
-/bin/echo -e tsh> ./myspin 4 \046
-./myspin 4 &
+WAIT
 
-/bin/echo tsh> fg
-fg
+/bin/echo -e tsh\076 ./mytstpp
+NEXT
+./mytstpp
+NEXT
 
-/bin/echo tsh> bg
-bg
-
-/bin/echo tsh> fg a
-fg a
-
-/bin/echo tsh> bg a
-bg a
-
-/bin/echo tsh> fg 9999999
-fg 9999999
-
-/bin/echo tsh> bg 9999999
-bg 9999999
-
-/bin/echo tsh> fg %2
-fg %2
-
-/bin/echo tsh> fg %1
-fg %1
-
-SLEEP 2
-TSTP
-
-/bin/echo tsh> bg %2
-bg %2
-
-/bin/echo tsh> bg %1
-bg %1
-
-/bin/echo tsh> jobs
+/bin/echo -e tsh\076 jobs
+NEXT
 jobs
+NEXT
 
+SIGNAL
 
+quit
 

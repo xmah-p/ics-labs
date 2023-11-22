@@ -1,22 +1,51 @@
-################
-CS:APP Shell Lab
-################
+#####################################################################
+# CS:APP Shell Lab
+#
+# Student Source Files
+######################################################################
 
-Files:
+This directory contains the files you will need for the CS:APP Shell
+Lab.
 
-Makefile	# Compiles your shell program and runs the tests
-README		# This file
-tsh.c		# The shell program that you will write and hand in
-tshref		# The reference shell binary.
+tsh.c
+        This is the file you will be modifying and handing in.
 
-# The remaining files are used to test your shell
-sdriver.pl	# The trace-driven shell driver
-trace*.txt	# The 15 trace files that control the shell driver
-tshref.out 	# Example output of the reference shell on all 15 traces
+#########################################
+# You shouldn't modify any of these files
+#########################################
+tshref*
+	This is the reference shell executable
 
-# Little C programs that are called by the trace files
-myspin.c	# Takes argument <n> and spins for <n> seconds
-mysplit.c	# Forks a child that spins for <n> seconds
-mystop.c        # Spins for <n> seconds and sends SIGTSTP to itself
-myint.c         # Spins for <n> seconds and sends SIGINT to itself
+sdriver.c
+        The shell driver source program
+
+runtrace.c
+	The trace interpreter source program
+
+trace{00-30}.txt
+	Trace files used by the driver
+
+config.h
+        Header file for sdriver.c
+
+mycat.c
+myenv.c
+myhup.c
+myintp.c
+myints.c
+myspin1.c
+myspin2.c
+mysplit.c
+mysplitp.c
+mytstpp.c
+mytstps.c
+myterm1.c
+myterm2.c
+myterm3.c
+	These are helper programs that are referenced in the trace files.
+
+Makefile:
+        This is the makefile that builds the driver program.
+
+
 

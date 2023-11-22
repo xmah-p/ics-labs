@@ -1,17 +1,14 @@
 #
-# trace12.txt - Forward SIGTSTP to every process in foreground process group
+# trace12.txt - Child sends SIGTSTP to itself
 #
-/bin/echo -e tsh> ./mysplit 4
-./mysplit 4 
+/bin/echo -e tsh\076 ./mytstps
+NEXT
+./mytstps
+NEXT
 
-SLEEP 2
-TSTP
-
-/bin/echo tsh> jobs
+/bin/echo -e tsh\076 jobs
+NEXT
 jobs
+NEXT
 
-/bin/echo tsh> /bin/ps a
-/bin/ps a
-
-
-
+quit

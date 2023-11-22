@@ -1,12 +1,11 @@
 #
-# trace11.txt - Forward SIGINT to every process in foreground process group
+# trace11.txt - Child sends SIGINT to itself
 #
-/bin/echo -e tsh> ./mysplit 4
-./mysplit 4 
+/bin/echo -e tsh\076 ./myints
+NEXT
+./myints
+NEXT
 
-SLEEP 2
-INT
-
-/bin/echo tsh> /bin/ps a
-/bin/ps a
-
+/bin/echo -e tsh\076 quit
+NEXT
+quit
