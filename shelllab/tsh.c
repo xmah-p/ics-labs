@@ -49,6 +49,7 @@ char prompt[] = "tsh> "; /* command line prompt (DO NOT CHANGE) */
 int verbose = 0;         /* if true, print additional output */
 int nextjid = 1;         /* next job ID to allocate */
 char sbuf[MAXLINE];      /* for composing sprintf messages */
+int suspend = 1;         /* suspend the shell when fg job is running */
 
 struct job_t {             /* The job struct */
     pid_t pid;             /* job PID */
@@ -107,8 +108,49 @@ ssize_t sio_putl(long v);
 ssize_t sio_put(const char* fmt, ...);
 void sio_error(char s[]);
 
+/* Wrapper functions */
+
+/* Wrappers for Unix signal functions */
 typedef void handler_t(int);
 handler_t* Signal(int signum, handler_t* handler);
+
+void Sigprocmask(int how, const sigset_t* set, sigset_t* oldset);
+
+void Sigemptyset(sigset_t* set);
+
+void Sigfillset(sigset_t* set);
+
+void Sigaddset(sigset_t* set, int signum);
+
+void Sigdelset(sigset_t* set, int signum);
+
+int Sigismember(const sigset_t* set, int signum);
+
+int Sigsuspend(const sigset_t* set);
+
+/* Wrapper for Unix I/O routines */
+int Open(const char* filename, int flags);
+
+int Dup2(int fd1, int fd2);
+
+/* Wrappers for Unix process control functions */
+pid_t Fork(void);
+
+pid_t Waitpid(pid_t pid, int* statusp, int options);
+
+void Execve(const char* filename, char* const argv[], char* const envp[]);
+
+void Kill(pid_t pid, int signum);
+
+void Setpgid(pid_t pid, pid_t pgid);
+
+pid_t Getpgrp(void);
+
+/* Misc helper functions */
+
+int input_fd(const char* filename);
+
+int output_fd(const char* filename);
 
 /*
  * main - The shell's main routine
@@ -120,7 +162,7 @@ int main(int argc, char** argv) {
 
     /* Redirect stderr to stdout (so that driver will get all output
      * on the pipe connected to stdout) */
-    dup2(1, 2);
+    Dup2(1, 2);
 
     /* Parse the command line */
     while ((c = getopt(argc, argv, "hvp")) != EOF) {
@@ -192,6 +234,16 @@ int main(int argc, char** argv) {
 void eval(char* cmdline) {
     int bg; /* should the job run in bg or fg? */
     struct cmdline_tokens tok;
+    pid_t pid;
+
+    sigset_t mask_all, prev_all;
+    sigset_t mask_one, prev_one;
+
+    Sigfillset(&mask_all);
+    Sigemptyset(&mask_one);
+    Sigaddset(&mask_one, SIGCHLD);
+
+    Signal(SIGCHLD, sigchld_handler);
 
     /* Parse command line */
     bg = parseline(cmdline, &tok);
@@ -200,6 +252,41 @@ void eval(char* cmdline) {
         return;
     if (tok.argv[0] == NULL) /* ignore empty lines */
         return;
+
+    switch (tok.builtins) {
+        case BUILTIN_NONE: break;
+        case BUILTIN_QUIT: exit(0);
+        case BUILTIN_JOBS: listjobs(job_list, input_fd(tok.infile)); return;
+        case BUILTIN_BG: return;    /* TODO */
+        case BUILTIN_FG: return;    /* TODO */
+        case BUILTIN_KILL: return;  /* TODO */
+        case BUILTIN_NOHUP: return; /* TODO*/
+    }
+
+    Sigprocmask(SIG_BLOCK, &mask_one, &prev_one); /* Block SIGCHLD */
+
+    /* Create a new job */
+    if ((pid = Fork()) == 0) {
+        Setpgid(0, 0);
+        Execve(tok.argv[0], tok.argv, environ);
+    }
+
+    /* Foreground */
+    if (!bg) {
+        Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
+        addjob(job_list, pid, FG, cmdline);
+        Sigprocmask(SIG_UNBLOCK, &prev_all, NULL);
+        while (suspend) Sigsuspend(&prev_one);
+    }
+
+    /* Background */
+    else if (bg) {
+        Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
+        addjob(job_list, pid, bg, cmdline);
+        Sigprocmask(SIG_UNBLOCK, &prev_all, NULL);
+    }
+
+    Sigprocmask(SIG_UNBLOCK, &prev_one, NULL); /* Unblock SIGCHLD */
 
     return;
 }
@@ -358,7 +445,25 @@ int parseline(const char* cmdline, struct cmdline_tokens* tok) {
  *     handler reaps all available zombie children, but doesn't wait
  *     for any other currently running children to terminate.
  */
-void sigchld_handler(int sig) { return; }
+void sigchld_handler(int sig) {
+    int olderrno = errno;
+    sigset_t mask_all, prev_all;
+    pid_t pid;
+    struct job_t* job;
+
+    Sigfillset(&mask_all);
+
+    while ((pid = waitpid(-1, NULL, 0)) > 0) { /* reap children */
+        Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
+        job = getjobpid(job_list, pid);
+        if (job->state == FG) suspend = 0;
+        deletejob(job_list, pid);
+        if (verbose) sio_put("Reaped child pid=%d", pid);
+        Sigprocmask(SIG_UNBLOCK, &prev_all, NULL);
+    }
+    if (errno != ECHILD) sio_error("waitpid error");
+    errno = olderrno;
+}
 
 /*
  * sigint_handler - The kernel sends a SIGINT to the shell whenver the
@@ -695,6 +800,26 @@ void sio_error(char s[]) /* Put error message and exit */
     _exit(1);
 }
 
+/* input_fd - Return the file descriptor of filename as input src */
+int input_fd(const char* filename) {
+    if (filename) return Open(filename, O_RDONLY | O_CREAT);
+    return STDIN_FILENO;
+}
+
+/* output_fd - Return the file descriptor of filename as output dest */
+int output_fd(const char* filename) {
+    if (filename) return Open(filename, O_RDONLY | O_CREAT);
+    return STDOUT_FILENO;
+}
+
+/******************************
+ * end other helper functions
+ ******************************/
+
+/*********************
+ * Wrapper functions
+ *********************/
+
 /*
  * Signal - wrapper for the sigaction function
  */
@@ -705,6 +830,101 @@ handler_t* Signal(int signum, handler_t* handler) {
     sigemptyset(&action.sa_mask); /* block sigs of type being handled */
     action.sa_flags = SA_RESTART; /* restart syscalls if possible */
 
-    if (sigaction(signum, &action, &old_action) < 0) unix_error("Signal error");
+    if (sigaction(signum, &action, &old_action) < 0)
+        unix_error("Signal error");
     return (old_action.sa_handler);
 }
+
+/* Sigprocmask - wrapper for sigprocmask */
+void Sigprocmask(int how, const sigset_t* set, sigset_t* oldset) {
+    if (sigprocmask(how, set, oldset) < 0) unix_error("Sigprocmask error");
+    return;
+}
+
+/* Sigemptyset - wrapper for sigemptyset */
+void Sigemptyset(sigset_t* set) {
+    if (sigemptyset(set) < 0) unix_error("Sigemptyset error");
+    return;
+}
+
+/* Sigfillset - wrapper for sigfillset */
+void Sigfillset(sigset_t* set) {
+    if (sigfillset(set) < 0) unix_error("Sigfillset error");
+    return;
+}
+
+/* Sigaddset - wrapper for sigaddset */
+void Sigaddset(sigset_t* set, int signum) {
+    if (sigaddset(set, signum) < 0) unix_error("Sigaddset error");
+    return;
+}
+
+/* Sigdelset - wrapper for sigdelset */
+void Sigdelset(sigset_t* set, int signum) {
+    if (sigdelset(set, signum) < 0) unix_error("Sigdelset error");
+    return;
+}
+
+/* Sigismember - wrapper for sigismember */
+int Sigismember(const sigset_t* set, int signum) {
+    int rc;
+    if ((rc = sigismember(set, signum)) < 0) unix_error("Sigismember error");
+    return rc;
+}
+
+/* Sigsuspend - wrapper for sigsuspend */
+int Sigsuspend(const sigset_t* set) {
+    int rc = sigsuspend(set); /* always returns -1 */
+    if (errno != EINTR) unix_error("Sigsuspend error");
+    return rc;
+}
+
+/* Open - wrapper for open */
+int Open(const char* filename, int flags) {
+    int ret;
+    if ((ret = open(filename, flags) < 0)) unix_error("Open error");
+    return ret;
+}
+
+/* Dup2 - wrapper for dup2 */
+int Dup2(int fd1, int fd2) {
+    int rc;
+    if ((rc = dup2(fd1, fd2)) < 0) unix_error("Dup2 error");
+    return rc;
+}
+
+/* Fork - wrapper for fork */
+pid_t Fork(void) {
+    pid_t pid;
+    if ((pid = fork()) < 0) unix_error("Fork error");
+    return pid;
+}
+
+/* Waitpid - wrapper for waitpid */
+pid_t Waitpid(pid_t pid, int* statusp, int options) {
+    pid_t ret;
+    if ((ret = waitpid(pid, statusp, options)) < 0)
+        unix_error("Waitpid error");
+    return ret;
+}
+
+/* Execve - wrapper for execve */
+void Execve(const char* filename, char* const argv[], char* const envp[]) {
+    if (execve(filename, argv, envp) < 0) unix_error("Execve error");
+}
+
+/* Kill - wrapper for kill */
+void Kill(pid_t pid, int signum) {
+    int rc;
+    if ((rc = kill(pid, signum)) < 0) unix_error("Kill error");
+}
+
+/* Setpgid - wrapper for setpgid */
+void Setpgid(pid_t pid, pid_t pgid) {
+    int rc;
+    if ((rc = setpgid(pid, pgid)) < 0) unix_error("Setpgid error");
+    return;
+}
+
+/* Getpgrp - wrapper for getpgrp */
+pid_t Getpgrp(void) { return getpgrp(); }
