@@ -3,9 +3,7 @@
 # -e 开启转义，\076 为 >，\046 为 &
 ```
 
-# What functions set errno? 
 
-waitpid
 
 # When to reap zombie processes?  
 
@@ -35,13 +33,8 @@ Do not assume that the child will still be running when the parent returns from 
 
 Do not call `waitpid` in multiple places. 
 
-# Don'ts
-
-Don't spin in a tight loop: `while (1) ;` or calling `sleep` in a loop, use `sigsuspend`.
 
 # Hints
-
-
 
 When you implement your signal handlers, be sure to send SIGINT and SIGTSTP signals to the entire foreground process group, using ”-pid” instead of ”pid” in the argument to the kill function. The driver program specifically tests for this error.
 

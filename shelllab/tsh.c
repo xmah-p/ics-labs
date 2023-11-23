@@ -149,6 +149,8 @@ pid_t Getpgrp(void);
 /* Wrappers for other functions */
 void Addjob(struct job_t* job_list, pid_t pid, int state, char* cmdline);
 
+void Deletejob(struct job_t* job_list, struct job_t* job);
+
 /* Misc helper functions */
 
 int input_fd(const char* filename);
@@ -239,12 +241,19 @@ void eval(char* cmdline) {
     struct cmdline_tokens tok;
     pid_t pid;
 
-    sigset_t mask_one, prev_one;
+    sigset_t mask_one;
+    sigset_t mask_three, prev_three;
 
     Sigemptyset(&mask_one);
+    Sigemptyset(&mask_three);
     Sigaddset(&mask_one, SIGCHLD);
+    Sigaddset(&mask_three, SIGCHLD);
+    Sigaddset(&mask_three, SIGINT);
+    Sigaddset(&mask_three, SIGTSTP);
 
     Signal(SIGCHLD, sigchld_handler);
+    Signal(SIGINT, sigint_handler);
+    Signal(SIGTSTP, sigtstp_handler);
 
     /* Parse command line */
     bg = parseline(cmdline, &tok);
@@ -264,13 +273,18 @@ void eval(char* cmdline) {
         case BUILTIN_NOHUP: return; /* TODO*/
     }
 
-    Sigprocmask(SIG_BLOCK, &mask_one, &prev_one); /* Block SIGCHLD */
+    Sigprocmask(SIG_BLOCK, &mask_three,
+                &prev_three); /* Block SIGCHLD, SIGINT and SIGTSTP */
 
     suspend = 1;
 
     /* Create a new job */
     if ((pid = Fork()) == 0) {
         Setpgid(0, 0);
+        Sigprocmask(SIG_SETMASK, &prev_three, NULL);
+        Signal(SIGCHLD, SIG_DFL);
+        Signal(SIGINT, SIG_DFL);
+        Signal(SIGTSTP, SIG_DFL);
         Execve(tok.argv[0], tok.argv, environ);
     }
 
@@ -279,7 +293,7 @@ void eval(char* cmdline) {
         Addjob(job_list, pid, FG,
                cmdline); /* All signals are blocked inside the wrapper */
         while (suspend) {
-            Sigsuspend(&prev_one);
+            Sigsuspend(&prev_three);
         }
     }
 
@@ -288,7 +302,7 @@ void eval(char* cmdline) {
         Addjob(job_list, pid, BG, cmdline);
     }
 
-    Sigprocmask(SIG_SETMASK, &prev_one, NULL); /* Unblock SIGCHLD */
+    Sigprocmask(SIG_SETMASK, &prev_three, NULL); /* Unblock SIGCHLD */
 
     return;
 }
@@ -452,35 +466,42 @@ void sigchld_handler(int sig) {
     int status = 0;
     pid_t pid;
     sigset_t mask_all, prev_all;
+    struct job_t* job;
 
     Sigfillset(&mask_all);
     if (verbose) sio_put("sigchld_handler: entering\n");
 
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+    while ((pid = waitpid(-1, &status, WUNTRACED | WNOHANG)) > 0) {
         Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
-        struct job_t* job;
         job = getjobpid(job_list, pid);
+        if (job->state == FG) suspend = 0; /* set suspend */
 
-        if (job->state == FG) suspend = 0;
-
-        /* print verbose info */
-        if (verbose) {
-            sio_put("sigchld_handler: Job [%d] (%d) deleted\n", job->jid,
-                    job->pid);
-            if (WIFEXITED(status))
+        if (WIFEXITED(status)) {
+            if (verbose)
                 sio_put(
                     "sigchld_handler: Job [%d] (%d) terminates OK (status "
                     "%d)\n",
                     job->jid, job->pid, WEXITSTATUS(status));
+            Deletejob(job_list, job);
         }
 
-        if (!deletejob(job_list, pid)) app_error("deletejob error");
+        else if (WIFSIGNALED(status)) {
+            sio_put("Job [%d] (%d) terminated by signal %d\n", pid2jid(pid),
+                    pid, WTERMSIG(status));
+            Deletejob(job_list, job);
+        }
+
+        else if (WIFSTOPPED(status)) {
+            job->state = ST;
+            sio_put("Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid,
+                    WSTOPSIG(status));
+        }
 
         Sigprocmask(SIG_SETMASK, &prev_all, NULL);
     }
-    
+
     /* ECHILD and EINTR are normal, other errors should be reported */
-    if (errno != ECHILD && errno != EINTR) {
+    if (errno && errno != ECHILD && errno != EINTR) {
         sio_put("waitpid error: %d ", errno);
         sio_put(strerror(errno));
         sio_error("\n");
@@ -495,14 +516,33 @@ void sigchld_handler(int sig) {
  *    user types ctrl-c at the keyboard.  Catch it and send it along
  *    to the foreground job.
  */
-void sigint_handler(int sig) { return; }
+void sigint_handler(int sig) {
+    int olderrno = errno;
+    pid_t pid = fgpid(job_list);
+
+    if (verbose) sio_put("sigint_handler: entering\n");
+    kill(-pid, SIGINT);
+    if (verbose) sio_put("sigint_handler: Job (%d) killed\n", pid);
+
+    errno = olderrno;
+    if (verbose) sio_put("sigint_handler: exiting\n");
+}
 
 /*
  * sigtstp_handler - The kernel sends a SIGTSTP to the shell whenever
  *     the user types ctrl-z at the keyboard. Catch it and suspend the
  *     foreground job by sending it a SIGTSTP.
  */
-void sigtstp_handler(int sig) { return; }
+void sigtstp_handler(int sig) {
+    int olderrno = errno;
+    pid_t pid = fgpid(job_list);
+
+    if (verbose) sio_put("sigtstp_handler: entering\n");
+    kill(-pid, SIGTSTP);
+
+    errno = olderrno;
+    if (verbose) sio_put("sigtstp_handler: exiting\n");
+}
 
 /*
  * sigquit_handler - The driver program can gracefully terminate the
@@ -905,8 +945,10 @@ int Sigismember(const sigset_t* set, int signum) {
 /* Sigsuspend - wrapper for sigsuspend */
 int Sigsuspend(const sigset_t* set) {
     if (verbose) sio_put("sigsuspend: entering\n");
+
     int rc = sigsuspend(set); /* always returns -1 */
     if (errno != EINTR) unix_error("Sigsuspend error");
+
     if (verbose) sio_put("sigsuspend: exiting\n");
     return rc;
 }
@@ -972,6 +1014,13 @@ void Addjob(struct job_t* job_list, pid_t pid, int state, char* cmdline) {
 
 /*
  * Deletejob - wrapper for deletejob
- * Delete job from job_list, set global var suspend to 0 if FG
+ * Delete job from job_list
  * Should only be called by sigchld_handler
  */
+void Deletejob(struct job_t* job_list, struct job_t* job) {
+    if (verbose) {
+        sio_put("sigchld_handler: Job [%d] (%d) deleted\n", job->jid,
+                job->pid);
+    }
+    if (!deletejob(job_list, job->pid)) app_error("deletejob error");
+}
