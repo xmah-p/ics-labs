@@ -146,6 +146,9 @@ void Setpgid(pid_t pid, pid_t pgid);
 
 pid_t Getpgrp(void);
 
+/* Wrappers for other functions */
+void Addjob(struct job_t* job_list, pid_t pid, int state, char* cmdline);
+
 /* Misc helper functions */
 
 int input_fd(const char* filename);
@@ -236,10 +239,8 @@ void eval(char* cmdline) {
     struct cmdline_tokens tok;
     pid_t pid;
 
-    sigset_t mask_all, prev_all;
     sigset_t mask_one, prev_one;
 
-    Sigfillset(&mask_all);
     Sigemptyset(&mask_one);
     Sigaddset(&mask_one, SIGCHLD);
 
@@ -265,6 +266,8 @@ void eval(char* cmdline) {
 
     Sigprocmask(SIG_BLOCK, &mask_one, &prev_one); /* Block SIGCHLD */
 
+    suspend = 1;
+
     /* Create a new job */
     if ((pid = Fork()) == 0) {
         Setpgid(0, 0);
@@ -273,20 +276,19 @@ void eval(char* cmdline) {
 
     /* Foreground */
     if (!bg) {
-        Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
-        addjob(job_list, pid, FG, cmdline);
-        Sigprocmask(SIG_UNBLOCK, &prev_all, NULL);
-        while (suspend) Sigsuspend(&prev_one);
+        Addjob(job_list, pid, FG,
+               cmdline); /* All signals are blocked inside the wrapper */
+        while (suspend) {
+            Sigsuspend(&prev_one);
+        }
     }
 
     /* Background */
     else if (bg) {
-        Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
-        addjob(job_list, pid, bg, cmdline);
-        Sigprocmask(SIG_UNBLOCK, &prev_all, NULL);
+        Addjob(job_list, pid, BG, cmdline);
     }
 
-    Sigprocmask(SIG_UNBLOCK, &prev_one, NULL); /* Unblock SIGCHLD */
+    Sigprocmask(SIG_SETMASK, &prev_one, NULL); /* Unblock SIGCHLD */
 
     return;
 }
@@ -447,22 +449,45 @@ int parseline(const char* cmdline, struct cmdline_tokens* tok) {
  */
 void sigchld_handler(int sig) {
     int olderrno = errno;
-    sigset_t mask_all, prev_all;
+    int status = 0;
     pid_t pid;
-    struct job_t* job;
+    sigset_t mask_all, prev_all;
 
     Sigfillset(&mask_all);
+    if (verbose) sio_put("sigchld_handler: entering\n");
 
-    while ((pid = waitpid(-1, NULL, 0)) > 0) { /* reap children */
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
+        struct job_t* job;
         job = getjobpid(job_list, pid);
+
         if (job->state == FG) suspend = 0;
-        deletejob(job_list, pid);
-        if (verbose) sio_put("Reaped child pid=%d", pid);
-        Sigprocmask(SIG_UNBLOCK, &prev_all, NULL);
+
+        /* print verbose info */
+        if (verbose) {
+            sio_put("sigchld_handler: Job [%d] (%d) deleted\n", job->jid,
+                    job->pid);
+            if (WIFEXITED(status))
+                sio_put(
+                    "sigchld_handler: Job [%d] (%d) terminates OK (status "
+                    "%d)\n",
+                    job->jid, job->pid, WEXITSTATUS(status));
+        }
+
+        if (!deletejob(job_list, pid)) app_error("deletejob error");
+
+        Sigprocmask(SIG_SETMASK, &prev_all, NULL);
     }
-    if (errno != ECHILD) sio_error("waitpid error");
+    
+    /* ECHILD and EINTR are normal, other errors should be reported */
+    if (errno != ECHILD && errno != EINTR) {
+        sio_put("waitpid error: %d ", errno);
+        sio_put(strerror(errno));
+        sio_error("\n");
+    }
     errno = olderrno;
+
+    if (verbose) sio_put("sigchld_handler: exiting\n");
 }
 
 /*
@@ -535,6 +560,11 @@ int addjob(struct job_t* job_list, pid_t pid, int state, char* cmdline) {
             if (verbose) {
                 printf("Added job [%d] %d %s\n", job_list[i].jid,
                        job_list[i].pid, job_list[i].cmdline);
+            }
+            if (state == BG) {
+                /* [1] (1794) ./myspin1 10 & */
+                printf("[%d] (%d) %s\n", job_list[i].jid, job_list[i].pid,
+                       job_list[i].cmdline);
             }
             return 1;
         }
@@ -874,8 +904,10 @@ int Sigismember(const sigset_t* set, int signum) {
 
 /* Sigsuspend - wrapper for sigsuspend */
 int Sigsuspend(const sigset_t* set) {
+    if (verbose) sio_put("sigsuspend: entering\n");
     int rc = sigsuspend(set); /* always returns -1 */
     if (errno != EINTR) unix_error("Sigsuspend error");
+    if (verbose) sio_put("sigsuspend: exiting\n");
     return rc;
 }
 
@@ -928,3 +960,18 @@ void Setpgid(pid_t pid, pid_t pgid) {
 
 /* Getpgrp - wrapper for getpgrp */
 pid_t Getpgrp(void) { return getpgrp(); }
+
+/* Addjob - wrapper for addjob */
+void Addjob(struct job_t* job_list, pid_t pid, int state, char* cmdline) {
+    sigset_t mask_all, prev_all;
+    Sigfillset(&mask_all);
+    Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
+    if (!addjob(job_list, pid, state, cmdline)) app_error("addjob error");
+    Sigprocmask(SIG_SETMASK, &prev_all, NULL);
+}
+
+/*
+ * Deletejob - wrapper for deletejob
+ * Delete job from job_list, set global var suspend to 0 if FG
+ * Should only be called by sigchld_handler
+ */

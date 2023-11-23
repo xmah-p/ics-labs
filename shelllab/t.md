@@ -3,6 +3,9 @@
 # -e 开启转义，\076 为 >，\046 为 &
 ```
 
+# What functions set errno? 
+
+waitpid
 
 # When to reap zombie processes?  
 
@@ -38,7 +41,7 @@ Don't spin in a tight loop: `while (1) ;` or calling `sleep` in a loop, use `sig
 
 # Hints
 
-After the fork, but before the execve, the child process should call setpgid(0, 0), which puts the child in a new process group whose group ID is identical to the child’s PID. This ensures that there will be only one process, your shell, in the foreground process group. When you type ctrl-c, the shell should catch the resulting SIGINT and then forward it to the appropriate foreground job (or more precisely, the process group that contains the foreground job)
+
 
 When you implement your signal handlers, be sure to send SIGINT and SIGTSTP signals to the entire foreground process group, using ”-pid” instead of ”pid” in the argument to the kill function. The driver program specifically tests for this error.
 
