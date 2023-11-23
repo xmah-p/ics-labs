@@ -85,6 +85,10 @@ void sigchld_handler(int sig);
 void sigtstp_handler(int sig);
 void sigint_handler(int sig);
 
+void builtin_bg(char* id);
+void builtin_fg(char* id);
+void builtin_kill(char* id);
+
 /* Here are helper routines that we've provided for you */
 int parseline(const char* cmdline, struct cmdline_tokens* tok);
 void sigquit_handler(int sig);
@@ -99,6 +103,7 @@ struct job_t* getjobpid(struct job_t* job_list, pid_t pid);
 struct job_t* getjobjid(struct job_t* job_list, int jid);
 int pid2jid(pid_t pid);
 void listjobs(struct job_t* job_list, int output_fd);
+struct job_t* getjobid(struct job_t* job_list, char* id);
 
 void usage(void);
 void unix_error(char* msg);
@@ -241,12 +246,9 @@ void eval(char* cmdline) {
     struct cmdline_tokens tok;
     pid_t pid;
 
-    sigset_t mask_one;
     sigset_t mask_three, prev_three;
 
-    Sigemptyset(&mask_one);
     Sigemptyset(&mask_three);
-    Sigaddset(&mask_one, SIGCHLD);
     Sigaddset(&mask_three, SIGCHLD);
     Sigaddset(&mask_three, SIGINT);
     Sigaddset(&mask_three, SIGTSTP);
@@ -267,10 +269,10 @@ void eval(char* cmdline) {
         case BUILTIN_NONE: break;
         case BUILTIN_QUIT: exit(0);
         case BUILTIN_JOBS: listjobs(job_list, input_fd(tok.infile)); return;
-        case BUILTIN_BG: return;    /* TODO */
-        case BUILTIN_FG: return;    /* TODO */
-        case BUILTIN_KILL: return;  /* TODO */
-        case BUILTIN_NOHUP: return; /* TODO*/
+        case BUILTIN_BG: builtin_bg(tok.argv[1]); return;
+        case BUILTIN_FG: builtin_fg(tok.argv[1]); return;
+        case BUILTIN_KILL: builtin_kill(tok.argv[1]); return;
+        case BUILTIN_NOHUP: return; /* TODO */
     }
 
     Sigprocmask(SIG_BLOCK, &mask_three,
@@ -302,7 +304,8 @@ void eval(char* cmdline) {
         Addjob(job_list, pid, BG, cmdline);
     }
 
-    Sigprocmask(SIG_SETMASK, &prev_three, NULL); /* Unblock SIGCHLD */
+    Sigprocmask(SIG_SETMASK, &prev_three,
+                NULL); /* Unblock SIGCHLD, SIGINT and SIGTSTP */
 
     return;
 }
@@ -556,6 +559,60 @@ void sigquit_handler(int sig) {
  * End signal handlers
  *********************/
 
+/********************
+ *** Builtin cmds ***
+ ********************/
+
+/*
+ * Builtin bg command
+ * Usage: bg job
+ * Restarts job by sending it a SIGCONT, and then runs it in the bg
+ * id can be either PID or JID
+ */
+void builtin_bg(char* id) {
+    sigset_t mask_all, prev_all;
+    struct job_t* job;
+
+    Sigfillset(&mask_all);
+
+    Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
+    job = getjobid(job_list, id);
+    if (!job) printf("%s: No such job\n", id);
+    kill(-job->pid, SIGCONT);
+    job->state = BG;
+    Sigprocmask(SIG_SETMASK, &prev_all, NULL);
+
+    printf("[%d] (%d) %s\n", job->jid, job->pid, job->cmdline);
+}
+
+/*
+ * Builtin fg command
+ * Usage: fg job
+ * Restarts job by sending it a SIGCONT, and then runs it in the fg
+ * id can be either PID or JID
+ */
+void builtin_fg(char* id) {
+    sigset_t mask_all, prev_all;
+    struct job_t* job;
+
+    Sigfillset(&mask_all);
+
+    Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
+    job = getjobid(job_list, id);
+    if (!job) printf("%s: No such job\n", id);
+    kill(-job->pid, SIGCONT);
+    job->state = FG;
+    suspend = 1;
+    while (suspend) Sigsuspend(&prev_all);
+    Sigprocmask(SIG_SETMASK, &prev_all, NULL);
+}
+
+void builtin_kill(char* job) { return; }
+
+/************************
+ *** End builtin cmds ***
+ ************************/
+
 /***********************************************
  * Helper routines that manipulate the job list
  **********************************************/
@@ -705,6 +762,18 @@ void listjobs(struct job_t* job_list, int output_fd) {
         }
     }
 }
+
+struct job_t* getjobid(struct job_t* job_list, char* id) {
+    int pid, jid;
+    if (id[0] == '%') {
+        jid = atoi(id + 1);
+        return getjobjid(job_list, jid);
+    } else {
+        pid = atoi(id);
+        return getjobpid(job_list, pid);
+    }
+}
+
 /******************************
  * end job list helper routines
  ******************************/
@@ -984,7 +1053,10 @@ pid_t Waitpid(pid_t pid, int* statusp, int options) {
 
 /* Execve - wrapper for execve */
 void Execve(const char* filename, char* const argv[], char* const envp[]) {
-    if (execve(filename, argv, envp) < 0) unix_error("Execve error");
+    if (execve(filename, argv, envp) < 0) {
+        printf("%s: Command not found\n", argv[0]);
+        exit(1);
+    }
 }
 
 /* Kill - wrapper for kill */
@@ -1022,5 +1094,7 @@ void Deletejob(struct job_t* job_list, struct job_t* job) {
         sio_put("sigchld_handler: Job [%d] (%d) deleted\n", job->jid,
                 job->pid);
     }
-    if (!deletejob(job_list, job->pid)) app_error("deletejob error");
+    if (!deletejob(job_list, job->pid)) {
+        sio_error("deletejob error");
+    }
 }
