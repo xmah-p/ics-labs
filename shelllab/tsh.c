@@ -49,7 +49,10 @@ char prompt[] = "tsh> "; /* command line prompt (DO NOT CHANGE) */
 int verbose = 0;         /* if true, print additional output */
 int nextjid = 1;         /* next job ID to allocate */
 char sbuf[MAXLINE];      /* for composing sprintf messages */
-int suspend = 1;         /* suspend the shell when fg job is running */
+int suspend = 1;         /* suspend the shell when fg job is running.
+                          * should only be used by eval and builtin_fg,
+                          * and should only be set zero by sigchld_handler
+                          */
 
 struct job_t {             /* The job struct */
     pid_t pid;             /* job PID */
@@ -127,10 +130,6 @@ void Sigfillset(sigset_t* set);
 
 void Sigaddset(sigset_t* set, int signum);
 
-void Sigdelset(sigset_t* set, int signum);
-
-int Sigismember(const sigset_t* set, int signum);
-
 int Sigsuspend(const sigset_t* set);
 
 /* Wrapper for Unix I/O routines */
@@ -141,15 +140,11 @@ int Dup2(int fd1, int fd2);
 /* Wrappers for Unix process control functions */
 pid_t Fork(void);
 
-pid_t Waitpid(pid_t pid, int* statusp, int options);
-
 void Execve(const char* filename, char* const argv[], char* const envp[]);
 
 void Kill(pid_t pid, int signum);
 
 void Setpgid(pid_t pid, pid_t pgid);
-
-pid_t Getpgrp(void);
 
 /* Wrappers for other functions */
 void Addjob(struct job_t* job_list, pid_t pid, int state, char* cmdline);
@@ -536,7 +531,7 @@ void sigint_handler(int sig) {
     pid_t pid = fgpid(job_list);
 
     if (verbose) sio_put("sigint_handler: entering\n");
-    kill(-pid, SIGINT);
+    Kill(-pid, SIGINT);
     if (verbose) sio_put("sigint_handler: Job (%d) killed\n", pid);
 
     errno = olderrno;
@@ -553,7 +548,7 @@ void sigtstp_handler(int sig) {
     pid_t pid = fgpid(job_list);
 
     if (verbose) sio_put("sigtstp_handler: entering\n");
-    kill(-pid, SIGTSTP);
+    Kill(-pid, SIGTSTP);
 
     errno = olderrno;
     if (verbose) sio_put("sigtstp_handler: exiting\n");
@@ -589,7 +584,7 @@ void builtin_bg(char* id) {
 
     Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
     if ((job = getjobid(job_list, id)) == NULL) return;
-    kill(-job->pid, SIGCONT);
+    Kill(-job->pid, SIGCONT);
     job->state = BG;
     Sigprocmask(SIG_SETMASK, &prev_all, NULL);
 
@@ -610,7 +605,7 @@ void builtin_fg(char* id) {
 
     Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
     if ((job = getjobid(job_list, id)) == NULL) return;
-    kill(-job->pid, SIGCONT);
+    Kill(-job->pid, SIGCONT);
     job->state = FG;
     suspend = 1;
     while (suspend) Sigsuspend(&prev_all);
@@ -632,7 +627,7 @@ void builtin_kill(char* id) {
 
     Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
     if ((job = getjobid(job_list, id)) == NULL) return;
-    kill(-job->pid, SIGTERM);
+    Kill(-job->pid, SIGTERM);
 
     Sigprocmask(SIG_SETMASK, &prev_all, NULL);
 }
@@ -793,7 +788,9 @@ void listjobs(struct job_t* job_list, int output_fd) {
 
 /*
  * getjobid
- * Get job by its pid or jid */
+ * Get job by its pid or jid
+ * Return NULL and print error message if not found
+ */
 struct job_t* getjobid(struct job_t* job_list, char* id) {
     int pid, jid;
     struct job_t* job;
@@ -1023,7 +1020,7 @@ handler_t* Signal(int signum, handler_t* handler) {
     struct sigaction action, old_action;
 
     action.sa_handler = handler;
-    sigemptyset(&action.sa_mask); /* block sigs of type being handled */
+    Sigemptyset(&action.sa_mask); /* block sigs of type being handled */
     action.sa_flags = SA_RESTART; /* restart syscalls if possible */
 
     if (sigaction(signum, &action, &old_action) < 0)
@@ -1033,111 +1030,83 @@ handler_t* Signal(int signum, handler_t* handler) {
 
 /* Sigprocmask - wrapper for sigprocmask */
 void Sigprocmask(int how, const sigset_t* set, sigset_t* oldset) {
-    if (sigprocmask(how, set, oldset) < 0) unix_error("Sigprocmask error");
+    if (sigprocmask(how, set, oldset) < 0) sio_error("Sigprocmask error");
     return;
 }
 
 /* Sigemptyset - wrapper for sigemptyset */
 void Sigemptyset(sigset_t* set) {
-    if (sigemptyset(set) < 0) unix_error("Sigemptyset error");
+    if (sigemptyset(set) < 0) sio_error("Sigemptyset error");
     return;
 }
 
 /* Sigfillset - wrapper for sigfillset */
 void Sigfillset(sigset_t* set) {
-    if (sigfillset(set) < 0) unix_error("Sigfillset error");
+    if (sigfillset(set) < 0) sio_error("Sigfillset error");
     return;
 }
 
 /* Sigaddset - wrapper for sigaddset */
 void Sigaddset(sigset_t* set, int signum) {
-    if (sigaddset(set, signum) < 0) unix_error("Sigaddset error");
+    if (sigaddset(set, signum) < 0) sio_error("Sigaddset error");
     return;
-}
-
-/* Sigdelset - wrapper for sigdelset */
-void Sigdelset(sigset_t* set, int signum) {
-    if (sigdelset(set, signum) < 0) unix_error("Sigdelset error");
-    return;
-}
-
-/* Sigismember - wrapper for sigismember */
-int Sigismember(const sigset_t* set, int signum) {
-    int rc;
-    if ((rc = sigismember(set, signum)) < 0) unix_error("Sigismember error");
-    return rc;
 }
 
 /* Sigsuspend - wrapper for sigsuspend */
 int Sigsuspend(const sigset_t* set) {
-    if (verbose) sio_put("sigsuspend: entering\n");
-
     int rc = sigsuspend(set); /* always returns -1 */
-    if (errno != EINTR) unix_error("Sigsuspend error");
-
-    if (verbose) sio_put("sigsuspend: exiting\n");
+    if (errno != EINTR) sio_error("Sigsuspend error");
     return rc;
 }
 
 /* Open - wrapper for open */
 int Open(const char* filename, int flags) {
     int ret;
-    if ((ret = open(filename, flags)) < 0) unix_error("Open error");
+    if ((ret = open(filename, flags)) < 0) sio_error("Open error");
     return ret;
 }
 
 /* Dup2 - wrapper for dup2 */
 int Dup2(int fd1, int fd2) {
     int rc;
-    if ((rc = dup2(fd1, fd2)) < 0) unix_error("Dup2 error");
+    if ((rc = dup2(fd1, fd2)) < 0) sio_error("Dup2 error");
     return rc;
 }
 
 /* Fork - wrapper for fork */
 pid_t Fork(void) {
     pid_t pid;
-    if ((pid = fork()) < 0) unix_error("Fork error");
+    if ((pid = fork()) < 0) sio_error("Fork error");
     return pid;
-}
-
-/* Waitpid - wrapper for waitpid */
-pid_t Waitpid(pid_t pid, int* statusp, int options) {
-    pid_t ret;
-    if ((ret = waitpid(pid, statusp, options)) < 0)
-        unix_error("Waitpid error");
-    return ret;
 }
 
 /* Execve - wrapper for execve */
 void Execve(const char* filename, char* const argv[], char* const envp[]) {
     if (execve(filename, argv, envp) < 0) {
-        printf("%s: Command not found\n", argv[0]);
-        exit(1);
+        sio_puts(argv[0]);
+        sio_error(": Command not found\n");
     }
 }
 
 /* Kill - wrapper for kill */
 void Kill(pid_t pid, int signum) {
     int rc;
-    if ((rc = kill(pid, signum)) < 0) unix_error("Kill error");
+    if ((rc = kill(pid, signum)) < 0) sio_error("Kill error");
 }
 
 /* Setpgid - wrapper for setpgid */
 void Setpgid(pid_t pid, pid_t pgid) {
     int rc;
-    if ((rc = setpgid(pid, pgid)) < 0) unix_error("Setpgid error");
+    if ((rc = setpgid(pid, pgid)) < 0) sio_error("Setpgid error");
     return;
 }
-
-/* Getpgrp - wrapper for getpgrp */
-pid_t Getpgrp(void) { return getpgrp(); }
 
 /* Addjob - wrapper for addjob */
 void Addjob(struct job_t* job_list, pid_t pid, int state, char* cmdline) {
     sigset_t mask_all, prev_all;
     Sigfillset(&mask_all);
     Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
-    if (!addjob(job_list, pid, state, cmdline)) app_error("addjob error");
+    if (!addjob(job_list, pid, state, cmdline)) sio_error("addjob error");
     Sigprocmask(SIG_SETMASK, &prev_all, NULL);
 }
 
