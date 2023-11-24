@@ -479,8 +479,8 @@ void sigchld_handler(int sig) {
     while ((pid = waitpid(-1, &status, WUNTRACED | WNOHANG | WCONTINUED)) >
            0) {
         Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
-        job = getjobpid(job_list, pid);
-        if (job->state == FG) suspend = 0; /* set suspend */
+        job = getjobpid(job_list, pid);    /* should never get NULL here */
+        if (job->state == FG) suspend = 0; /* end suspending */
 
         if (WIFEXITED(status)) {
             if (verbose)
@@ -512,9 +512,7 @@ void sigchld_handler(int sig) {
 
     /* ECHILD and EINTR are normal, other errors should be reported */
     if (errno && errno != ECHILD && errno != EINTR) {
-        sio_put("waitpid error: %d ", errno);
-        sio_put(strerror(errno));
-        sio_error("\n");
+        sio_error("waitpid error");
     }
     errno = olderrno;
 
@@ -682,7 +680,6 @@ int addjob(struct job_t* job_list, pid_t pid, int state, char* cmdline) {
                        job_list[i].pid, job_list[i].cmdline);
             }
             if (state == BG) {
-                /* [1] (1794) ./myspin1 10 & */
                 printf("[%d] (%d) %s\n", job_list[i].jid, job_list[i].pid,
                        job_list[i].cmdline);
             }
@@ -993,13 +990,19 @@ void sio_error(char s[]) /* Put error message and exit */
     _exit(1);
 }
 
-/* input_fd - Return the file descriptor of filename as input src */
+/* input_fd 
+ * Return the file descriptor of filename as input src 
+ * (default is stdin) 
+ */
 int input_fd(const char* filename) {
     if (filename) return Open(filename, O_RDONLY);
     return STDIN_FILENO;
 }
 
-/* output_fd - Return the file descriptor of filename as output dest */
+/* output_fd
+ * Return the file descriptor of filename as output dest 
+ * (default is stdout) 
+*/
 int output_fd(const char* filename) {
     if (filename) return Open(filename, O_WRONLY | O_CREAT);
     return STDOUT_FILENO;
@@ -1054,7 +1057,7 @@ void Sigaddset(sigset_t* set, int signum) {
 
 /* Sigsuspend - wrapper for sigsuspend */
 int Sigsuspend(const sigset_t* set) {
-    int rc = sigsuspend(set); /* always returns -1 */
+    int rc = sigsuspend(set);
     if (errno != EINTR) sio_error("Sigsuspend error");
     return rc;
 }
@@ -1114,6 +1117,7 @@ void Addjob(struct job_t* job_list, pid_t pid, int state, char* cmdline) {
  * Deletejob - wrapper for deletejob
  * Delete job from job_list
  * Should only be called by sigchld_handler
+ * This function is async-signal-safe.
  */
 void Deletejob(struct job_t* job_list, struct job_t* job) {
     if (verbose) {
