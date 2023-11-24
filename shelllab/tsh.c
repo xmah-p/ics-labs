@@ -245,6 +245,7 @@ void eval(char* cmdline) {
     int bg; /* should the job run in bg or fg? */
     struct cmdline_tokens tok;
     pid_t pid;
+    char** argv;
 
     sigset_t mask_three, prev_three;
 
@@ -259,6 +260,7 @@ void eval(char* cmdline) {
 
     /* Parse command line */
     bg = parseline(cmdline, &tok);
+    argv = tok.argv;
 
     if (bg == -1) /* parsing error */
         return;
@@ -268,11 +270,14 @@ void eval(char* cmdline) {
     switch (tok.builtins) {
         case BUILTIN_NONE: break;
         case BUILTIN_QUIT: exit(0);
-        case BUILTIN_JOBS: listjobs(job_list, input_fd(tok.infile)); return;
+        case BUILTIN_JOBS: listjobs(job_list, output_fd(tok.outfile)); return;
         case BUILTIN_BG: builtin_bg(tok.argv[1]); return;
         case BUILTIN_FG: builtin_fg(tok.argv[1]); return;
         case BUILTIN_KILL: builtin_kill(tok.argv[1]); return;
-        case BUILTIN_NOHUP: return; /* TODO */
+        case BUILTIN_NOHUP:
+            Signal(SIGHUP, SIG_IGN);
+            argv++;
+            break;
     }
 
     Sigprocmask(SIG_BLOCK, &mask_three,
@@ -283,11 +288,13 @@ void eval(char* cmdline) {
     /* Create a new job */
     if ((pid = Fork()) == 0) {
         Setpgid(0, 0);
-        Sigprocmask(SIG_SETMASK, &prev_three, NULL);
+        Dup2(input_fd(tok.infile), STDIN_FILENO);
+        Dup2(output_fd(tok.outfile), STDOUT_FILENO);
         Signal(SIGCHLD, SIG_DFL);
         Signal(SIGINT, SIG_DFL);
         Signal(SIGTSTP, SIG_DFL);
-        Execve(tok.argv[0], tok.argv, environ);
+        Sigprocmask(SIG_SETMASK, &prev_three, NULL);
+        Execve(argv[0], argv, environ);
     }
 
     /* Foreground */
@@ -474,7 +481,8 @@ void sigchld_handler(int sig) {
     Sigfillset(&mask_all);
     if (verbose) sio_put("sigchld_handler: entering\n");
 
-    while ((pid = waitpid(-1, &status, WUNTRACED | WNOHANG)) > 0) {
+    while ((pid = waitpid(-1, &status, WUNTRACED | WNOHANG | WCONTINUED)) >
+           0) {
         Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
         job = getjobpid(job_list, pid);
         if (job->state == FG) suspend = 0; /* set suspend */
@@ -498,6 +506,10 @@ void sigchld_handler(int sig) {
             job->state = ST;
             sio_put("Job [%d] (%d) stopped by signal %d\n", pid2jid(pid), pid,
                     WSTOPSIG(status));
+        }
+
+        else if (WIFCONTINUED(status)) {
+            job->state = BG;
         }
 
         Sigprocmask(SIG_SETMASK, &prev_all, NULL);
@@ -576,8 +588,7 @@ void builtin_bg(char* id) {
     Sigfillset(&mask_all);
 
     Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
-    job = getjobid(job_list, id);
-    if (!job) printf("%s: No such job\n", id);
+    if ((job = getjobid(job_list, id)) == NULL) return;
     kill(-job->pid, SIGCONT);
     job->state = BG;
     Sigprocmask(SIG_SETMASK, &prev_all, NULL);
@@ -598,8 +609,7 @@ void builtin_fg(char* id) {
     Sigfillset(&mask_all);
 
     Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
-    job = getjobid(job_list, id);
-    if (!job) printf("%s: No such job\n", id);
+    if ((job = getjobid(job_list, id)) == NULL) return;
     kill(-job->pid, SIGCONT);
     job->state = FG;
     suspend = 1;
@@ -607,7 +617,25 @@ void builtin_fg(char* id) {
     Sigprocmask(SIG_SETMASK, &prev_all, NULL);
 }
 
-void builtin_kill(char* job) { return; }
+/*
+ * Builtin kill command
+ * Usage: kill job
+ * Kills a job or a process group by sending each of its process a SIGTERM.
+ * id can be either PID or JID. Negative id will be interpreted as its absolute
+ * value.
+ */
+void builtin_kill(char* id) {
+    sigset_t mask_all, prev_all;
+    struct job_t* job;
+
+    Sigfillset(&mask_all);
+
+    Sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
+    if ((job = getjobid(job_list, id)) == NULL) return;
+    kill(-job->pid, SIGTERM);
+
+    Sigprocmask(SIG_SETMASK, &prev_all, NULL);
+}
 
 /************************
  *** End builtin cmds ***
@@ -763,15 +791,44 @@ void listjobs(struct job_t* job_list, int output_fd) {
     }
 }
 
+/*
+ * getjobid
+ * Get job by its pid or jid */
 struct job_t* getjobid(struct job_t* job_list, char* id) {
     int pid, jid;
+    struct job_t* job;
     if (id[0] == '%') {
         jid = atoi(id + 1);
-        return getjobjid(job_list, jid);
+        if (jid < 0) {
+            job = getjobjid(job_list, -jid);
+            if (!job) {
+                printf("%s: No such process group\n", id);
+                return NULL;
+            }
+        } else {
+            job = getjobjid(job_list, jid);
+            if (!job) {
+                printf("%s: No such job\n", id);
+                return NULL;
+            }
+        }
     } else {
         pid = atoi(id);
-        return getjobpid(job_list, pid);
+        if (pid < 0) {
+            job = getjobpid(job_list, -pid);
+            if (!job) {
+                printf("(%s): No such process group\n", id);
+                return NULL;
+            }
+        } else {
+            job = getjobjid(job_list, pid);
+            if (!job) {
+                printf("(%s): No such process\n", id);
+                return NULL;
+            }
+        }
     }
+    return job;
 }
 
 /******************************
@@ -941,13 +998,13 @@ void sio_error(char s[]) /* Put error message and exit */
 
 /* input_fd - Return the file descriptor of filename as input src */
 int input_fd(const char* filename) {
-    if (filename) return Open(filename, O_RDONLY | O_CREAT);
+    if (filename) return Open(filename, O_RDONLY);
     return STDIN_FILENO;
 }
 
 /* output_fd - Return the file descriptor of filename as output dest */
 int output_fd(const char* filename) {
-    if (filename) return Open(filename, O_RDONLY | O_CREAT);
+    if (filename) return Open(filename, O_WRONLY | O_CREAT);
     return STDOUT_FILENO;
 }
 
@@ -1025,7 +1082,7 @@ int Sigsuspend(const sigset_t* set) {
 /* Open - wrapper for open */
 int Open(const char* filename, int flags) {
     int ret;
-    if ((ret = open(filename, flags) < 0)) unix_error("Open error");
+    if ((ret = open(filename, flags)) < 0) unix_error("Open error");
     return ret;
 }
 

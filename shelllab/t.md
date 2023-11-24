@@ -3,7 +3,22 @@
 # -e 开启转义，\076 为 >，\046 为 &
 ```
 
+SIGCHLD 的产生条件
+1、子进程终止时。
+2、子进程接收到 SIGSTOP 信号停止时。
+3、子进程处在停止态，接收到 SIGCONT 后唤醒时。
 
+The kill job command kills a job in the job list, or a process group by sending each relevant
+process a SIGTERM signal. The job argument can be either a PID or a JID. 
+
+Note that if you get a negative job argument, such as kill %-1 or kill -15213, your shell should kill the
+process group of the job with a JID of %-JID, or of the job with a PID of -PID. If the process
+group does not exist, your shell should print ”%JID: No such process group” or ”(PID): No such
+process group”, where JID and PID should be replaced by the command line argument.
+
+On the other hand, if the job argument is positive, your shell should kill the corresponding job. If the
+job does not exist, your shell should print ”%JID: No such job” or ”(PID): No such process”.
+Play with the reference shell to check the details and gain intuition.
 
 # When to reap zombie processes?  
 
