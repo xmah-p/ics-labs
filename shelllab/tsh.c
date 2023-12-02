@@ -278,8 +278,6 @@ void eval(char* cmdline) {
     Sigprocmask(SIG_BLOCK, &mask_three,
                 &prev_three); /* Block SIGCHLD, SIGINT and SIGTSTP */
 
-    suspend = 1;
-
     /* Create a new job */
     if ((pid = Fork()) == 0) {
         Setpgid(0, 0);
@@ -292,6 +290,8 @@ void eval(char* cmdline) {
         Execve(argv[0], argv, environ);
     }
 
+    suspend = 1;
+    
     /* Foreground */
     if (!bg) {
         Addjob(job_list, pid, FG,
