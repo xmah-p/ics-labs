@@ -21,11 +21,13 @@ Epilogue: Allocated, size = **0**, only has header
 Allocated block:
 
 - header: size + prev allocated bit + allocated bit
+- payload
 - no footer
 
 Free block:
 
 - header: size + prev allocated bit + allocated bit
+- payload
 - footer: size + prev allocated bit + allocated bit
 
 least block size: 2 words 
@@ -34,8 +36,21 @@ form:
 
 Prologue (1 w) + regular blocks + Epilogue (1 w)
 
-coallesce:
+## explicit
 
+Allocated block:
+
+- header: size + prev allocated bit + allocated bit
+- payload
+- no footer
+
+Free block:
+
+- header: size + prev allocated bit + allocated bit
+- pred, succ
+- footer: size + prev allocated bit + allocated bit
+
+least block size: 2 words for allocated block, 4 words for free block
 
 
 
