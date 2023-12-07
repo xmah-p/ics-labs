@@ -1,6 +1,48 @@
+# textbook
+
+header & footer: size + allocated bit
+
+least block size: 2 words
+
+simple first fit
+
+form: 
+
+padding (1 w) + Prologue (2 w) + regular blocks + Epilogue (1 w)
+
+Prologue: Allocated, size = 2 w
+
+Epilogue: Allocated, size = **0**, only has header
+
+# explicit
+
+## remove footer
+
+Allocated block:
+
+- header: size + prev allocated bit + allocated bit
+- no footer
+
+Free block:
+
+- header: size + prev allocated bit + allocated bit
+- footer: size + prev allocated bit + allocated bit
+
+least block size: 2 words 
+
+form:
+
+Prologue (1 w) + regular blocks + Epilogue (1 w)
+
+coallesce:
+
+
+
+
+
 # mine
 
-堆的大小永远严格小于 $2^32$ 字节。堆的位置不确定。
+堆的大小永远严格小于 $2^{32}$ 字节。堆的位置不确定。
 
 `mm_init` 分配初始堆空间, 必须在此函数内重新初始化所有全局指针, 不能在此函数内调用 `mem_init`
 
@@ -20,12 +62,49 @@
 
 `memlib.c` 的 support rountines
 
-`mdriver.c`
-- `-p` 
+不能定义全局数据结构, 如数组, 树, 链表
+可以定义全局结构体和标量变量, 如整数类型, 浮点类型, 指针
 
+没有 * 标记的 trace 是不计入时间空间性能计算的
+用 u 标记的 trace 只计入空间性能计算
+用 p 标记的 trace 只计入空间性能计算
 
+heap checker 检查序言块, 结尾块, 每个块的地址对齐, 块边界, header and footer: minsize, alignment, prev/next allocate/free consistency, header matching its footer, 检查合并 (无连续空闲块)
+
+还检查空闲链表: next's prev is itself, 所有空闲块基址介于 `mem_heap_lo()` 和 `mem_heap_high()`, 遍历整个堆得到的空闲块个数是否等于遍历空闲链表得到的个数, 分离适配中块大小是否适合其大小类 
+
+`-c, -f` tiny trace file
+
+`-V` for verbose info
+
+`-D` do the most checking
+
+Modify makefile, use `-g` in the compile flags (restore when calculating performance pts)
+
+gdb `watch`
+
+sizeof(size_t) is 8!
+
+profiler: `gprof`
+
+```bash
+ln -s mm-explicit mm.c
+```
 
 # malloclab
+
+ics malloclab 提示: （是dz debug卡的比较久的点）
+1. 假如你定义了除了已有的那个heap_listp之外的任何全局变量，则你应该在mm_init函数开头手动将他们初始化；因为每个trace要跑12遍，mdriver每遍都默认只会初始化heap_listp，那么你定义的那些全局变量就会停留在上一次run完之后的值，从而可能会导致你怎么de都de不掉的bug。。。
+2. 假如你在place函数中并不是把bp作为最后被分配块的块指针的话，请注意malloc的返回值应当是指向被分配那块的指针，也就是说bp加个偏移量才是malloc的返回值，否则就全乱套了。。。
+3. 注意封装，能模块化的尽量模块化，最好就是要做到“在编程时不需要考虑指针运算的细节，只需要根据你想要的语义调宏就好了”
+#19755473 1年前 2022-11-28 10:21
+[Alice] 补充：
+4. 去脚部之后如果出现“1 garbled byte”，大概率是在coalesce时不小心往相邻的非空闲块试图写入脚部信息，但注意非空闲块是没有脚部只有头部的
+5. checkheap一定要先写，节省大量debug时间不是简单说说的，写得越详细越好，但当你的程序没有任何bug，可以开始测试时候，注释掉所有的debug语句（包括printf），否则你的thru可能会很低
+6. 还是thru的问题，如果你发现你的程序根本没有任何bug，使用first fit（千万不要用best fit）但thru还是很低，不如试试调参数，调chunksize调分离链表的组数，调着调着说不定就有惊喜
+7. 如果是先写隐式去脚部再改显式去脚部，最小块大小会从8字节变到16字节，这时一定要记得把程序的所有部分都检查一下看看是否都适应了新的最小块要求（如place），否则可能会造成莫名其妙的segmentation fault
+#19755493 1年前 2022-11-28 10:23
+[Alice] Re Alice: 4这一点专门适用于去脚部的情况哈，但去脚部带来的增益真的是比较大的，写起来也不困难网上有很多提示
 
 具体内容为写一个动态内存分配器。debug和优化过程极度痛苦，今年降低了难度，但只是降低了优化程序的难度。想debug从而跑通程序仍然很难。dz水平垃圾，跑通程序+优化到接近满分的过程足足花了30小时
 【建议早点开始，做好心理准备，给malloc留出足够多的时间】【建议速战速决，malloclab在期末季前两周放出来，非常魔鬼。如果为了3分5分的小优化花上一天时间，实在不太值】
