@@ -52,6 +52,19 @@ Free block:
 
 least block size: 2 words for allocated block, 4 words for free block
 
+maintain a list head
+
+### LIFO
+
+find fit: first fit
+
+free: insert at head
+
+### Address-ordered
+
+find fit: first fit
+
+free: insert at address order, takes linear time
 
 
 
@@ -97,6 +110,12 @@ heap checker 检查序言块, 结尾块, 每个块的地址对齐, 块边界, he
 Modify makefile, use `-g` in the compile flags (restore when calculating performance pts)
 
 gdb `watch`
+
+b find_fit if size == 24
+
+rwatch <thing> - stop on reading a memory location
+awatch <thing> - stop on any memory access
+
 
 sizeof(size_t) is 8!
 

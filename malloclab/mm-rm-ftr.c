@@ -1,17 +1,17 @@
 /*
- * mm-rm-ftr.c
+ * mm.c
  *
  * NOTE TO STUDENTS: Replace this header comment with your own header
  * comment that gives a high level description of your solution.
  */
-#include <assert.h>
+#include "mm.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include "memlib.h"
-#include "mm.h"
 
 /* If you want debugging output, use the following macro.  When you hand
  * in, remove the #define DEBUG line. */
@@ -31,6 +31,10 @@
 #define calloc mm_calloc
 #endif /* def DRIVER */
 
+#define STR(x) #x
+#define ASSERT(expr) \
+    ((!(expr)) ? printf("Assertion failed at %d: %s\n", lineno, STR(expr)) : 0)
+
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
 
@@ -48,20 +52,24 @@
 
 /* Allocated block:
  * Header:        | my size | prev's alloc | my alloc = 1 |
- * Payload:       | ... |
+ * Payload:       | ...                                   |
  * No footer
+ * Least size: 8
  */
 
 /* Free block:
  * Header:        | my size | prev's alloc | my alloc = 0 |
- * Payload:       | ... |
+ * Payload:       |                ...                    |
  * Footer:        | my size | prev's alloc | my alloc = 0 |
+ * Least size: 8
  */
 
 /* Heap struct layout
  *      Prologue: Allocated, size = 4
  *      Regular Blocks
  *      Epilogue: Allocated, size = 0
+ *
+ * Prologue and epilogue are not blocks, but paddings with allocated bits.
  */
 
 /* Pack a header/footer */
@@ -78,8 +86,12 @@
 
 /* Given block ptr bp, compute address of its header and footer */
 #define HDRP(bp) ((char*)(bp)-WSIZE)
-/* Does not work for allocated blocks */
-#define FTRP(bp) ((char*)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
+#define FTRP(bp) ((char*)(bp) + SIZE(bp) - DSIZE)
+#define PRED(bp) (GET(bp))
+#define SUCC(bp) (GET((char*)(bp) + WSIZE))
+#define SIZE(bp) (GET_SIZE(HDRP(bp)))
+#define PREV_ALLOC(bp) (GET_PREV_ALLOC(HDRP(bp)))
+#define ALLOC(bp) (GET_ALLOC(HDRP(bp)))
 
 /* Given block ptr bp, compute address of next and previous blocks */
 /* get next by my header */
@@ -94,13 +106,16 @@
 #define SET_FTR(bp, size, prev_alloc, alloc) \
     PUT((FTRP(bp)), PACK((size), (prev_alloc), (alloc)))
 #define SET_PREV_ALLOC(bp, prev_alloc) \
-    PUT((HDRP(bp)),                    \
-        PACK(GET_SIZE(HDRP(bp)), (prev_alloc), GET_ALLOC(HDRP(bp))))
+    PUT((HDRP(bp)), PACK(SIZE(bp), (prev_alloc), ALLOC(bp)))
+
+#define SET_LINK(bp, pred, succ) \
+    PUT((char*)(bp), (pred));    \
+    PUT(((char*)(bp) + WSIZE), (succ))
 
 typedef void* block_ptr;
 
 /* Global variables */
-static char* heap_listp = 0; /* Pointer to first block */
+static block_ptr heap_listp = NULL; /* Pointer to first block */
 
 /* Function prototypes for internal helper routines */
 static block_ptr extend_heap(size_t words);
@@ -114,10 +129,10 @@ static block_ptr coalesce(block_ptr bp);
 int mm_init(void) {
     /* Create the initial empty heap */
     if ((heap_listp = mem_sbrk(2 * WSIZE)) == (void*)-1) return -1;
+
     PUT(heap_listp, PACK(WSIZE, 1, 1));           /* Prologue header */
     PUT(heap_listp + (1 * WSIZE), PACK(0, 1, 1)); /* Epilogue header */
     heap_listp += (2 * WSIZE);
-
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE / WSIZE) == NULL) return -1;
     return 0;
@@ -162,8 +177,8 @@ block_ptr malloc(size_t size) {
 void free(block_ptr bp) {
     if (bp == 0) return;
 
-    size_t size = GET_SIZE(HDRP(bp));
-    size_t prev_alloc = GET_PREV_ALLOC(HDRP(bp));
+    size_t size = SIZE(bp);
+    size_t prev_alloc = PREV_ALLOC(bp);
     block_ptr next = NEXT_BLKP(bp);
 
     if (heap_listp == 0) {
@@ -201,7 +216,7 @@ block_ptr realloc(block_ptr ptr, size_t size) {
     }
 
     /* Copy the old data. */
-    oldsize = GET_SIZE(HDRP(ptr));
+    oldsize = SIZE(ptr);
     if (size < oldsize) oldsize = size;
     memcpy(newptr, ptr, oldsize);
 
@@ -216,7 +231,62 @@ block_ptr realloc(block_ptr ptr, size_t size) {
  *                can call this function using mm_checkheap(__LINE__);
  *                to identify the line number of the call site.
  */
-void mm_checkheap(int lineno) { lineno = lineno; /* keep gcc happy */ }
+void mm_checkheap(int lineno) {
+    /* checklist:
+     * 1. prologue and epilogue
+     * 2. header and footer: minsize, alignment, allocated bit consistency
+     * 3. header matching its footer
+     * 4. coalescing: no consecutive free blocks
+     * 5. doubly linked list consistency: next's prev is me, prev's next is me
+     * 6. all blocks' address should be between mem_heap_lo() and
+     * mem_heap_high()
+     * 7. # of free blocks in heap == # of free blocks in free list
+     * 8. segregated free list: block size should be suitable for its size
+     * class
+     */
+
+    block_ptr bp = heap_listp; /* first block in heap */
+    const size_t min_alloc_size = 8;
+    const size_t min_free_size = 8;
+    size_t free_block_cnt_by_heap = 0;
+
+    /* Prologue and epilogue */
+    block_ptr prologue = (char*)bp - DSIZE;
+    block_ptr epilogue = (char*)mem_sbrk(0) - WSIZE;
+
+    /* Prologue has a size of 4, so it is actually not a block, but a padding
+     * with allocated bit. Getting its size will get zero */
+    ASSERT(GET_SIZE(prologue) == 0);
+    ASSERT(GET_SIZE(epilogue) == 0);
+    ASSERT(GET_ALLOC(prologue) == 1);
+    ASSERT(GET_ALLOC(epilogue) == 1);
+
+    /* header and footer */
+    for (; SIZE(bp) != 0; bp = NEXT_BLKP(bp)) {
+        size_t size = SIZE(bp);
+        size_t alloc = ALLOC(bp);
+
+        block_ptr next = NEXT_BLKP(bp);
+        size_t next_alloc = ALLOC(next);
+        size_t next_prev_alloc = PREV_ALLOC(next);
+
+        /* min size */
+        if (alloc)
+            ASSERT(size >= min_alloc_size);
+        else
+            ASSERT(size >= min_free_size);
+
+        ASSERT(size % DSIZE == 0);        /* alignment */
+        ASSERT(alloc == next_prev_alloc); /* allocated bit consistency */
+
+        if (!alloc) {
+            free_block_cnt_by_heap++;
+            ASSERT(GET(HDRP(bp)) ==
+                   GET(FTRP(bp))); /* header matching footer */
+            ASSERT(next_alloc);    /* no consecutive free blocks */
+        }
+    }
+}
 
 /*
  * The remaining routines are internal helper routines
@@ -231,13 +301,14 @@ static block_ptr extend_heap(size_t words) {
 
     /* Allocate an even number of words to maintain alignment */
     size = (words % 2) ? (words + 1) * WSIZE : words * WSIZE;
+
     if ((long)(bp = mem_sbrk(size)) == -1) return NULL;
-    size_t prev_alloc = GET_PREV_ALLOC(HDRP(bp));
+    size_t prev_alloc = PREV_ALLOC(bp);
 
     /* Initialize free block header/footer and the epilogue header */
     SET_HDR(bp, size, prev_alloc, 0); /* Free block header */
     SET_FTR(bp, size, prev_alloc, 0); /* Free block footer */
-    SET_HDR(NEXT_BLKP(bp), 0, 0, 1);  /* New epilogue header */
+    SET_HDR(NEXT_BLKP(bp), 0, 0, 1); /* New epilogue header */
 
     /* Coalesce if the previous block was free */
     return coalesce(bp);
@@ -249,24 +320,24 @@ static block_ptr extend_heap(size_t words) {
 static block_ptr coalesce(block_ptr bp) {
     block_ptr next = NEXT_BLKP(bp);
 
-    size_t prev_alloc = GET_PREV_ALLOC(HDRP(bp));
-    size_t next_alloc = GET_ALLOC(HDRP(next));
-    size_t size = GET_SIZE(HDRP(bp));
+    size_t prev_alloc = PREV_ALLOC(bp);
+    size_t next_alloc = ALLOC(next);
+    size_t size = SIZE(bp);
 
     if (prev_alloc && next_alloc) { /* Case 1 */
         return bp;
     }
 
     else if (prev_alloc && !next_alloc) { /* Case 2 */
-        size += GET_SIZE(HDRP(next));
+        size += SIZE(next);
         SET_HDR(bp, size, 1, 0);
         SET_FTR(bp, size, 1, 0);
     }
 
     else if (!prev_alloc && next_alloc) { /* Case 3 */
         block_ptr prev = PREV_BLKP(bp);
-        size_t prev_alloc = GET_PREV_ALLOC(HDRP(prev));
-        size += GET_SIZE(HDRP(prev));
+        size_t prev_alloc = PREV_ALLOC(prev);
+        size += SIZE(prev);
         SET_FTR(bp, size, prev_alloc, 0);
         SET_HDR(prev, size, prev_alloc, 0);
         bp = prev;
@@ -274,8 +345,8 @@ static block_ptr coalesce(block_ptr bp) {
 
     else { /* Case 4 */
         block_ptr prev = PREV_BLKP(bp);
-        size_t prev_alloc = GET_PREV_ALLOC(HDRP(prev));
-        size += GET_SIZE(HDRP(prev)) + GET_SIZE(FTRP(next));
+        size_t prev_alloc = PREV_ALLOC(prev);
+        size += SIZE(prev) + SIZE(next);
         SET_HDR(prev, size, prev_alloc, 0);
         SET_FTR(next, size, prev_alloc, 0);
         bp = prev;
@@ -289,9 +360,8 @@ static block_ptr coalesce(block_ptr bp) {
  *         and split if remainder would be at least minimum block size
  */
 static void place(block_ptr bp, size_t asize) {
-    size_t csize = GET_SIZE(HDRP(bp)); /* Current free block size */
-    size_t prev_alloc =
-        GET_PREV_ALLOC(HDRP(bp)); /* Previous block alloc bit */
+    size_t csize = SIZE(bp);            /* Current free block size */
+    size_t prev_alloc = PREV_ALLOC(bp); /* Previous block alloc bit */
     block_ptr next = NEXT_BLKP(bp);
 
     if ((csize - asize) >= (2 * DSIZE)) {
@@ -312,8 +382,8 @@ static void place(block_ptr bp, size_t asize) {
 static block_ptr find_fit(size_t asize) {
     block_ptr bp;
 
-    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+    for (bp = heap_listp; SIZE(bp) > 0; bp = NEXT_BLKP(bp)) {
+        if (!ALLOC(bp) && (asize <= SIZE(bp))) {
             return bp;
         }
     }
