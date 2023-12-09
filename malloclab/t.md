@@ -54,6 +54,59 @@ least block size: 2 words for allocated block, 4 words for free block
 
 maintain a list head
 
+CIRCULAR!!: otherwise it's hard to deal with NULL
+
+do not insert a block that is already in the list
+
+
+when will a new free block be created (when should we call insert)?
+
+- a block is freed, and it did not coalesce with its prev (meaning its prev is allocated)
+- extending heap when the last block (prev of epilogue) is allocated 
+- spliting a free block
+
+when will coalesce be called?
+
+- extend
+- free
+
+1. and 2. are actually the same, and both will call coalesce. 
+
+We handle insertion and deletion in coalesce.
+
+coalesce: 
+
+- if prev is allocated, insert curr 
+- if next is free, delete next
+
+when will insert be called?
+
+- coalesce
+- place
+
+when will a free block be deleted from free list?
+
+- coalesce (next is free)
+- place 
+
+IMPORTANT: free will call coalesce, and then insert the coalesced block into the list. if the coalesced block is already in the list, it will be inserted twice. this will happen in case 3 and 4.
+
+DEBUG: 
+
+run amptjp.rep the second time, at the third malloc, when place called, the free block's pred and succ are garbled.
+
+$1 = (block_ptr) 0x800001010
+(gdb) x (int*)bp
+0x800001010:    0x1f851cc9
+(gdb) conti
+Continuing.
+
+Program received signal SIGSEGV, Segmentation fault.
+0x0000555555558fd2 in delete_free (bp=bp@entry=0x800001010) at mm.c:349
+349         SET_PRED(succ, pred);
+
+bp is 0x800001010, pred is 0x1f851cc9 (garbled)
+
 ### LIFO
 
 find fit: first fit
@@ -69,6 +122,16 @@ free: insert at address order, takes linear time
 
 
 # mine
+
+trace file 格式:
+
+weight num_ids num_ops ignore_ranges
+
+a index size
+
+r (realloc) index size
+
+f index
 
 堆的大小永远严格小于 $2^{32}$ 字节。堆的位置不确定。
 
@@ -217,3 +280,43 @@ ics malloclab 提示: （是dz debug卡的比较久的点）
 [Bob] binary2-bal 是反复申请两种大小的块，但是其中一个size会导致很多内部碎片，可以尝试处理一下那个size
 #20102543 11月前 2022-12-09 16:33
 [洞主] 谢谢大家，我再去看看
+
+ 分离空闲链表+去脚部+4字节指针+按组选择首次/最佳适配
+#25914185 2天前 12-07 20:56
+[洞主] 还能咋优化啊？
+#25914212 2天前 12-07 20:58
+[Alice] 我当年很神奇 前面几个lab都是大量借助博客指导 就这个完全自己打满的
+#25914218 2天前 12-07 20:58
+Alice 我当年很神奇 前面几个lab都是大量借助博客指导 就这个完全自己打满的
+[洞主] Re Alice: 笑死我也是的
+#25914221 2天前 12-07 20:59
+Alice 我当年很神奇 前面几个lab都是大量借助博客指导 就这个完全自己打满的
+[洞主] Re Alice: 这个lab一点网上的都没看
+#25914255 2天前 12-07 21:01
+[洞主] 开始对参数炼丹
+#25916181 1天前 12-07 23:04
+[Bob] 你怎么写的这么快
+#25916903 1天前 12-07 23:45
+[Carol] 为什么我也做的这些就只有94a😭😭😭😭😭😭😭
+#25921593 1天前 12-08 11:48
+[Dave] 考虑对数据优化
+#25925833 1天前 12-08 19:28
+[Eve] 请问下怎么做到4字节指针的啊
+#25928925 22小时前 12-09 00:01
+[洞主] 不卷了不卷了98交了hh
+#25928930 22小时前 12-09 00:02
+Carol 为什么我也做的这些就只有94a😭😭😭😭😭😭😭
+[洞主] Re Carol: 可能是一些细节问题吧🤔🤔
+#25928938 22小时前 12-09 00:02
+Dave 考虑对数据优化
+[洞主] Re Dave: 确实，我已经改过chunksize了，能混2分
+#25928948 22小时前 12-09 00:03
+Eve 请问下怎么做到4字节指针的啊
+[洞主] Re Eve: 取地址的后32为存储到块里，用的时候就把32位的数和heaplistp的前32位拼接一下
+#25928966 22小时前 12-09 00:05
+Eve 请问下怎么做到4字节指针的啊
+[洞主] Re Eve: 就是在uint32和uint64间来回类型强制转换就行了
+#25929016 22小时前 12-09 00:08
+[洞主] 分享两个小寄巧：
+chunksize可以优化一下混点分
+小的块用first fit 大的块用best fit可以同时白嫖前者的thru分和后者的util分捏

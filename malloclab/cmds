@@ -1,0 +1,7 @@
+b mm_malloc
+r
+b 176 if bp == 0x8000039a0
+delete 1
+conti
+watch *0x8000039a0
+conti
