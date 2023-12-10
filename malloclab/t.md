@@ -1,3 +1,93 @@
+# seglist
+
+## size class
+
+except random and random2, all traces have size <= 4096
+
+random2 max 32755, random1 max 32764
+
+category by power of 2 block size or payload size?
+
+size class:
+
+16, 17~20, 21~36, 37~68, 69~132, 133~260, 261~516, 517~1028, 1029~2052, 2053~4100, 4101~8196, 8197~16388, 16389~32772 (\infty)
+
+13 classes in total
+
+form: 
+
+13 list heads + Prologue (1 w) + regular blocks + Epilogue (1 w)
+
+singly lists?
+
+
+
+
+
+## asize
+
+bash, chrome, corners, firefox-reddit1, 2, firefox, freeciv 等等有 realloc (无需优化)
+
+直接特判 448 可以拿 88 分, 
+
+Results for mm malloc:
+  valid  util   ops    secs     Kops  trace
+   yes    77%  100000  0.002121 47138 ./traces/alaska.rep
+ * yes    89%    4805  0.000302 15905 ./traces/amptjp.rep
+ * yes    76%    4162  0.000054 77477 ./traces/bash.rep
+ * yes    77%   57716  0.000955 60458 ./traces/boat.rep
+ * yes    78%  100000  0.004581 21831 ./traces/boat-plus.rep
+ u yes    90%      --        --    -- ./traces/binary2-bal.rep
+ * yes    92%    5032  0.000147 34271 ./traces/cccp.rep
+ * yes    92%    5848  0.000163 35926 ./traces/cccp-bal.rep
+ * yes    74%   11991  0.000183 65632 ./traces/chrome.rep
+ * yes    99%   20000  0.000203 98537 ./traces/coalesce-big.rep
+   yes    66%   14400  0.000103139260 ./traces/coalescing-bal.rep
+   yes   100%      15  0.000001 22590 ./traces/corners.rep
+ * yes    94%    5683  0.000466 12197 ./traces/cp-decl.rep
+ u yes    71%      --        --    -- ./traces/exhaust.rep
+ * yes    96%    5380  0.000418 12860 ./traces/expr-bal.rep
+ * yes    83%   99544  0.008821 11285 ./traces/firefox-reddit2.rep
+ * yes    92%   55092  0.000728 75709 ./traces/freeciv.rep
+   yes    34%      10  0.000000 25316 ./traces/malloc.rep
+   yes    28%      17  0.000000 40476 ./traces/malloc-free.rep
+ p yes     --    1494  0.000018 83000 ./traces/perl.rep
+ * yes    88%    4800  0.000568  8453 ./traces/random.rep
+ * yes    85%    4800  0.000688  6977 ./traces/random2.rep
+   yes    26%   14401  0.047790   301 ./traces/realloc.rep
+16 15     86%  386347  0.018293 21120
+
+Perf index = 48 (util) & 40 (thru) = 88/100
+
+Results for mm malloc:
+  valid  util   ops    secs     Kops  trace
+   yes    70%  100000  0.002389 41852 ./traces/alaska.rep
+ * yes    89%    4805  0.000289 16649 ./traces/amptjp.rep
+ * yes    76%    4162  0.000041100459 ./traces/bash.rep
+ * yes    77%   57716  0.000603 95727 ./traces/boat.rep
+ * yes    78%  100000  0.004666 21432 ./traces/boat-plus.rep
+ u yes    90%      --        --    -- ./traces/binary2-bal.rep
+ * yes    91%    5032  0.000189 26652 ./traces/cccp.rep
+ * yes    91%    5848  0.000213 27415 ./traces/cccp-bal.rep
+ * yes    74%   11991  0.000201 59637 ./traces/chrome.rep
+ * yes    99%   20000  0.000197101743 ./traces/coalesce-big.rep
+   yes    66%   14400  0.000116124322 ./traces/coalescing-bal.rep
+   yes   100%      15  0.000001 16358 ./traces/corners.rep
+ * yes    93%    5683  0.000743  7653 ./traces/cp-decl.rep
+ u yes    71%      --        --    -- ./traces/exhaust.rep
+ * yes    96%    5380  0.000380 14175 ./traces/expr-bal.rep
+ * yes    82%   99544  0.009793 10164 ./traces/firefox-reddit2.rep
+ * yes    92%   55092  0.000827 66581 ./traces/freeciv.rep
+   yes    34%      10  0.000001 13532 ./traces/malloc.rep
+   yes    28%      17  0.000001 21411 ./traces/malloc-free.rep
+ p yes     --    1494  0.000028 52904 ./traces/perl.rep
+ * yes    88%    4800  0.001278  3755 ./traces/random.rep
+ * yes    85%    4800  0.000728  6597 ./traces/random2.rep
+   yes    26%   14401  0.048679   296 ./traces/realloc.rep
+16 15     86%  386347  0.020176 19149
+
+Perf index = 47 (util) & 40 (thru) = 87/100
+
 # textbook
 
 header & footer: size + allocated bit

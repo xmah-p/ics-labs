@@ -1,9 +1,46 @@
 /*
  * mm.c
  *
- * NOTE TO STUDENTS: Replace this header comment with your own header
- * comment that gives a high level description of your solution.
+ * 杨艺欣    2200017768
+ *
+ * Segregated fits + LIFO + Remove footer from allocated blocks
  */
+
+/* Block struct layout */
+
+/* Allocated block:
+ * Header:        | my size | prev's alloc | my alloc = 1 |
+ * Payload:       |                 ...                   |
+ * No footer
+ */
+
+/* Free block:
+ * Header:        | my size | prev's alloc | my alloc = 0 |
+ * Pointer:       |        pred      |       succ         |
+ * Payload:       |                ...                    |
+ * Footer:        | my size | prev's alloc | my alloc = 0 |
+ *
+ * pred and succ are unsigned int (4 bytes) offsets from heap_listp
+ * Least block size: 16 bytes
+ */
+
+/* Size class partition:
+ * 16, 17~20, 21~36, 37~68, 69~132, 133~260, 261~516, 517~1028, 1029~2052,
+ * 2053~4100, 4101~8196, 8197~16388, 16389~\infty
+ *
+ * 13 size classes in total
+ */
+
+/* Heap structure layout:
+ *      Free list header * 13: pred, succ. size = 8 * 13 = 104
+ *      Prologue: Allocated. size = 4
+ *      Regular Blocks
+ *      Epilogue: Allocated. size = 0 (takes 4 bytes space in heap though)
+ *
+ * Prologue and epilogue are actually not blocks, but paddings with allocated
+ * bits.
+ */
+
 #include "mm.h"
 
 #include <stdio.h>
@@ -15,7 +52,7 @@
 
 /* If you want debugging output, use the following macro.  When you hand
  * in, remove the #define DEBUG line. */
-#define DEBUG
+// #define DEBUG
 #ifdef DEBUG
 #define dbg_printf(...) printf(__VA_ARGS__)
 #else
@@ -48,33 +85,6 @@
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 
-/* Block struct layout */
-
-/* Allocated block:
- * Header:        | my size | prev's alloc | my alloc = 1 |
- * Payload:       | ...                                   |
- * No footer
- * Least size: 8
- */
-
-/* Free block:
- * Header:        | my size | prev's alloc | my alloc = 0 |
- * Pointer:       |        pred      |       succ         |
- * Payload:       |                ...                    |
- * Footer:        | my size | prev's alloc | my alloc = 0 |
- * Least size: 16
- * pred and succ are unsigned int offsets from heap_listp
- */
-
-/* Heap struct layout
- *      Free list header: pred, succ, size = 8
- *      Prologue: Allocated, size = 4
- *      Regular Blocks
- *      Epilogue: Allocated, size = 0
- *
- * Prologue and epilogue are not blocks, but paddings with allocated bits.
- */
-
 /* Pack a header/footer */
 #define PACK(size, prev_alloc, alloc) ((size) | ((prev_alloc) << 1) | (alloc))
 
@@ -90,11 +100,14 @@
 /* Given block ptr bp, compute address of its header and footer */
 #define HDRP(bp) ((char*)(bp)-WSIZE)
 #define FTRP(bp) ((char*)(bp) + SIZE(bp) - DSIZE)
-#define PRED(bp) (block_ptr)(GET(bp) + (char*)(free_listp))
-#define SUCC(bp) (block_ptr)(GET((char*)(bp) + WSIZE) + (char*)(free_listp))
 #define SIZE(bp) (GET_SIZE(HDRP(bp)))
 #define PREV_ALLOC(bp) (GET_PREV_ALLOC(HDRP(bp)))
 #define ALLOC(bp) (GET_ALLOC(HDRP(bp)))
+#define PRED(bp, head) (block_ptr)(GET(bp) + (char*)(head))
+#define SUCC(bp, head) (block_ptr)(GET((char*)(bp) + WSIZE) + (char*)(head))
+
+#define NEXT_HEAD(head) (block_ptr)((char*)(head) + DSIZE)
+#define HEAD_END (block_ptr)((char*)(heap_listp)-DSIZE)
 
 /* Given block ptr bp, compute address of next and previous blocks */
 /* get next by my header */
@@ -111,19 +124,19 @@
 #define SET_PREV_ALLOC(bp, prev_alloc) \
     PUT((HDRP(bp)), PACK(SIZE(bp), (prev_alloc), ALLOC(bp)))
 
-#define SET_LINK(bp, pred, succ)                             \
-    PUT((char*)(bp), (unsigned int)((pred) - (free_listp))); \
-    PUT(((char*)(bp) + WSIZE), (unsigned int)((succ) - (free_listp)))
-#define SET_PRED(bp, pred) \
-    PUT((char*)(bp), (unsigned int)((pred) - (free_listp)))
-#define SET_SUCC(bp, succ) \
-    PUT(((char*)(bp) + WSIZE), (unsigned int)((succ) - (free_listp)))
+#define SET_LINK(bp, pred, succ, head)                 \
+    PUT((char*)(bp), (unsigned int)((pred) - (head))); \
+    PUT(((char*)(bp) + WSIZE), (unsigned int)((succ) - (head)))
+#define SET_PRED(bp, pred, head) \
+    PUT((char*)(bp), (unsigned int)((pred) - (head)))
+#define SET_SUCC(bp, succ, head) \
+    PUT(((char*)(bp) + WSIZE), (unsigned int)((succ) - (head)))
 
 typedef void* block_ptr;
 
 /* Global variables */
 static block_ptr heap_listp = NULL; /* Pointer to first block */
-static block_ptr free_listp = NULL; /* Pointer to first free block */
+static block_ptr free_head[13];     /* Pointers to first free block */
 
 /* Function prototypes for internal helper routines */
 static block_ptr insert_free(block_ptr bp);
@@ -132,23 +145,27 @@ static block_ptr extend_heap(size_t words);
 static void place(block_ptr bp, size_t asize);
 static block_ptr find_fit(size_t asize);
 static block_ptr coalesce(block_ptr bp);
-static void print_free(void);
+static size_t adjust_size(size_t size);
+static block_ptr find_head(size_t size);
 
 /*
  * mm_init - Initialize the memory manager
  */
 int mm_init(void) {
     /* Create the initial empty heap */
-    if ((heap_listp = mem_sbrk(4 * WSIZE)) == (void*)-1) return -1;
-    free_listp = heap_listp;
+    if ((heap_listp = mem_sbrk(28 * WSIZE)) == (void*)-1) return -1;
 
-    SET_LINK(free_listp, free_listp, free_listp);     /* Free list head  */
-    PUT(heap_listp + (2 * WSIZE), PACK(WSIZE, 1, 1)); /* Prologue header */
-    PUT(heap_listp + (3 * WSIZE), PACK(0, 1, 1));     /* Epilogue header */
-    heap_listp += (4 * WSIZE);
+    for (int i = 0; i != 13; i++) {
+        free_head[i] = heap_listp + (i * DSIZE);
+        SET_LINK(free_head[i], free_head[i], free_head[i], free_head[i]);
+    }
+    PUT(heap_listp + (26 * WSIZE), PACK(WSIZE, 1, 1)); /* Prologue header */
+    PUT(heap_listp + (27 * WSIZE), PACK(0, 1, 1));     /* Epilogue header */
+    heap_listp += (28 * WSIZE);
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE / WSIZE) == NULL) return -1;
-    mm_checkheap(__LINE__);
+    // mm_checkheap(__LINE__);
+    dbg_printf("init: heap_listp is %p\n", heap_listp);
     return 0;
 }
 
@@ -167,23 +184,24 @@ block_ptr malloc(size_t size) {
     if (size == 0) return NULL;
 
     /* Adjust block size to include overhead and alignment reqs. */
-    if (size <= DSIZE)
-        asize = DSIZE * 2;
-    else
-        asize = DSIZE * ((size + (WSIZE) + (DSIZE - 1)) / DSIZE);
+    asize = adjust_size(size);
+
+    dbg_printf("malloc: size is %lu, asize is %lu\n", size, asize);
 
     /* Search the free list for a fit */
     if ((bp = find_fit(asize))) {
         place(bp, asize);
-        dbg_printf("place %p\n", bp);
+        dbg_printf("malloc: placed %p\n\n", bp);
         return bp;
     }
 
     /* No fit found. Get more memory and place the block */
     extendsize = MAX(asize, CHUNKSIZE);
     if ((bp = extend_heap(extendsize / WSIZE)) == NULL) return NULL;
+    dbg_printf("malloc: extended %p\n", bp);
     place(bp, asize);
-    mm_checkheap(__LINE__);
+    dbg_printf("malloc: placed %p\n", bp);
+    // mm_checkheap(__LINE__);
 
     return bp;
 }
@@ -206,8 +224,8 @@ void free(block_ptr bp) {
     SET_PREV_ALLOC(next, 0);
 
     coalesce(bp);
-    dbg_printf("free %p\n", bp);
-    mm_checkheap(__LINE__);
+    dbg_printf("free: free %p\n", bp);
+    // mm_checkheap(__LINE__);
 }
 
 /*
@@ -264,9 +282,9 @@ void mm_checkheap(int lineno) {
      * 8. segregated free list: block size should be suitable for its size
      * class
      */
+    dbg_printf("checkheap\n");
     block_ptr bp = heap_listp; /* first block in heap */
-    const size_t min_alloc_size = 8;
-    const size_t min_free_size = 16;
+    const size_t min_size = 16;
     size_t free_cnt_by_heap = 0;
     size_t free_cnt_by_list = 0;
 
@@ -291,10 +309,7 @@ void mm_checkheap(int lineno) {
         size_t next_prev_alloc = PREV_ALLOC(next);
 
         /* min size */
-        if (alloc)
-            ASSERT(size >= min_alloc_size);
-        else
-            ASSERT(size >= min_free_size);
+        ASSERT(size >= min_size);
 
         ASSERT(size % DSIZE == 0);        /* alignment */
         ASSERT(alloc == next_prev_alloc); /* allocated bit consistency */
@@ -316,16 +331,24 @@ void mm_checkheap(int lineno) {
     }
 
     /* doubly linked list consistency */
-    for (bp = SUCC(free_listp); bp != free_listp; bp = SUCC(bp)) {
-        block_ptr pred = PRED(bp);
-        block_ptr succ = SUCC(bp);
-        ASSERT(SUCC(pred) == bp);
-        ASSERT(PRED(succ) == bp);
-        ASSERT(!ALLOC(bp));
-        free_cnt_by_list++;
-        block_ptr p;
-        for (p = SUCC(bp); p != bp; p = SUCC(p)) {
-            ASSERT(bp != p);
+    for (int i = 0; i != 13; i++) {
+        block_ptr head = free_head[i];
+
+        for (bp = SUCC(head, head); bp != head; bp = SUCC(bp, head)) {
+            block_ptr pred = PRED(bp, head);
+            block_ptr succ = SUCC(bp, head);
+
+            ASSERT(SUCC(pred, head) == bp);
+            ASSERT(PRED(succ, head) == bp);
+            /* TODO: check size */
+            ASSERT(!ALLOC(bp));
+            free_cnt_by_list++;
+            block_ptr p;
+            for (p = SUCC(bp, head); p != bp; p = SUCC(p, head)) {
+                ASSERT(bp != p);
+            }
+            dbg_printf("free block %p in free list %d, size = %lu\n", bp, i,
+                       size);
         }
     }
 
@@ -341,23 +364,75 @@ void mm_checkheap(int lineno) {
  */
 
 /*
+ * find_head - find the head of the free list that fits the size
+ */
+static block_ptr find_head(size_t size) {
+    int idx = 0;
+    if (size <= 16)
+        idx = 0;
+    else if (size <= 20)
+        idx = 1;
+    else if (size <= 36)
+        idx = 2;
+    else if (size <= 68)
+        idx = 3;
+    else if (size <= 132)
+        idx = 4;
+    else if (size <= 260)
+        idx = 5;
+    else if (size <= 516)
+        idx = 6;
+    else if (size <= 1028)
+        idx = 7;
+    else if (size <= 2052)
+        idx = 8;
+    else if (size <= 4100)
+        idx = 9;
+    else if (size <= 8196)
+        idx = 10;
+    else if (size <= 16388)
+        idx = 11;
+    else
+        idx = 12;
+    return free_head[idx];
+}
+
+/*
+ * adjust_size - adjust malloc payload size to block size
+ */
+static size_t adjust_size(size_t size) {
+    size_t asize;
+    const size_t big_size = 128;
+
+    if (size <= DSIZE)
+        asize = DSIZE * 2;
+
+    else if (size > (big_size * 3)) {
+        size_t q = size / big_size;
+        size_t r = size % big_size;
+        if ((2 * r) < big_size)
+            asize = DSIZE * ((size + (WSIZE) + (DSIZE - 1)) / DSIZE);
+        else
+            asize = (q + 1) * big_size + DSIZE;
+    }
+
+    else
+        asize = DSIZE * ((size + (WSIZE) + (DSIZE - 1)) / DSIZE);
+    return asize;
+}
+
+/*
  * insert_free - Insert a free block into the free list
  */
 static block_ptr insert_free(block_ptr bp) {
-    // block_ptr p;
-    // for (p = SUCC(free_listp); p != free_listp; p = SUCC(p)) {
-    //     if (bp == p) {
-    //         printf("insert_free: %p already in free list\n", bp);
-    //         return NULL;
-    //     }
-    // }
-
     /* LIFO order */
-    block_ptr next = SUCC(free_listp);
-    SET_PRED(next, bp);
-    SET_LINK(bp, free_listp, next);
-    SET_SUCC(free_listp, bp);
-    mm_checkheap(__LINE__);
+    size_t size = SIZE(bp);
+    block_ptr head = find_head(size);
+
+    block_ptr next = SUCC(head, head);
+    SET_PRED(next, bp, head);
+    SET_LINK(bp, head, next, head);
+    SET_SUCC(head, bp, head);
     return bp;
 }
 
@@ -365,10 +440,13 @@ static block_ptr insert_free(block_ptr bp) {
  * delete_free - Delete a free block from the free list
  */
 static void delete_free(block_ptr bp) {
-    block_ptr pred = PRED(bp);
-    block_ptr succ = SUCC(bp);
-    SET_PRED(succ, pred);
-    SET_SUCC(pred, succ);
+    size_t size = SIZE(bp);
+    block_ptr head = find_head(size);
+
+    block_ptr pred = PRED(bp, head);
+    block_ptr succ = SUCC(bp, head);
+    SET_PRED(succ, pred, head);
+    SET_SUCC(pred, succ, head);
 }
 
 /*
@@ -412,35 +490,36 @@ static block_ptr coalesce(block_ptr bp) {
 
     else if (prev_alloc && !next_alloc) { /* Case 2 */
         size += SIZE(next);
+        delete_free(next);
         SET_HDR(bp, size, 1, 0);
         SET_FTR(bp, size, 1, 0);
-        delete_free(next);
     }
 
     else if (!prev_alloc && next_alloc) { /* Case 3 */
         block_ptr prev = PREV_BLKP(bp);
         size_t prev_alloc = PREV_ALLOC(prev);
+
+        delete_free(prev);
         size += SIZE(prev);
         SET_FTR(bp, size, prev_alloc, 0);
         SET_HDR(prev, size, prev_alloc, 0);
-        delete_free(prev);
         bp = prev;
     }
 
     else { /* Case 4 */
         block_ptr prev = PREV_BLKP(bp);
         size_t prev_alloc = PREV_ALLOC(prev);
+        delete_free(next);
+        delete_free(prev);
         size += SIZE(prev) + SIZE(next);
         SET_HDR(prev, size, prev_alloc, 0);
         SET_FTR(next, size, prev_alloc, 0);
-        delete_free(next);
-        delete_free(prev);
         bp = prev;
     }
 
     insert_free(bp);
 
-    mm_checkheap(__LINE__);
+    // mm_checkheap(__LINE__);
 
     return bp;
 }
@@ -457,17 +536,19 @@ static void place(block_ptr bp, size_t asize) {
     delete_free(bp);
 
     if ((csize - asize) >= (2 * DSIZE)) {
+        dbg_printf("place: splitting %p\n", bp);
         SET_HDR(bp, asize, prev_alloc, 1);
         bp = NEXT_BLKP(bp);
         SET_HDR(bp, csize - asize, 1, 0);
         SET_FTR(bp, csize - asize, 1, 0);
         SET_PREV_ALLOC(next, 0);
         insert_free(bp); /* no need to coalesce */
+        dbg_printf("place: free block %p\n", bp);
     } else {
         SET_HDR(bp, csize, prev_alloc, 1);
         SET_PREV_ALLOC(next, 1);
     }
-    mm_checkheap(__LINE__);
+    // mm_checkheap(__LINE__);
 }
 
 /*
@@ -475,17 +556,12 @@ static void place(block_ptr bp, size_t asize) {
  */
 static block_ptr find_fit(size_t asize) {
     block_ptr bp;
-
-    for (bp = SUCC(free_listp); bp != free_listp; bp = SUCC(bp)) {
-        if (asize <= SIZE(bp)) return bp;
+    for (block_ptr head = find_head(asize); head != HEAD_END;
+         head = NEXT_HEAD(head)) {
+        for (bp = SUCC(head, head); bp != head; bp = SUCC(bp, head)) {
+            if (asize <= SIZE(bp)) return bp;
+        }
     }
+
     return NULL; /* No fit */
-}
-
-static void print_free(void) {
-    block_ptr bp;
-    printf("free list:\n");
-    for (bp = SUCC(free_listp); bp != free_listp; bp = SUCC(bp)) {
-        printf("%p\n", bp);
-    }
 }
