@@ -1,3 +1,10 @@
+# tuning parameters
+
+chunksize: 1 << 12 seems the best
+
+
+
+
 # seglist
 
 ## size class

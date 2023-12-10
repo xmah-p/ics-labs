@@ -43,6 +43,7 @@
 
 #include "mm.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,7 +53,7 @@
 
 /* If you want debugging output, use the following macro.  When you hand
  * in, remove the #define DEBUG line. */
-// #define DEBUG
+/* #define DEBUG */
 #ifdef DEBUG
 #define dbg_printf(...) printf(__VA_ARGS__)
 #else
@@ -69,8 +70,9 @@
 #endif /* def DRIVER */
 
 #define STR(x) #x
-#define ASSERT(expr) \
-    ((!(expr)) ? printf("Assertion failed at %d: %s\n", lineno, STR(expr)) : 0)
+#define ASSERT(expr)                                                       \
+    ((!(expr)) ? printf("Assertion failed at %d: %s\n", lineno, STR(expr)) \
+               : 0)
 
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
@@ -136,7 +138,26 @@ typedef void* block_ptr;
 
 /* Global variables */
 static block_ptr heap_listp = NULL; /* Pointer to first block */
-static block_ptr free_head[13];     /* Pointers to first free block */
+
+typedef struct free_head_arr {
+    block_ptr h0;
+    block_ptr h1;
+    block_ptr h2;
+    block_ptr h3;
+    block_ptr h4;
+    block_ptr h5;
+    block_ptr h6;
+    block_ptr h7;
+    block_ptr h8;
+    block_ptr h9;
+    block_ptr h10;
+    block_ptr h11;
+    block_ptr h12;
+} free_head_arr;
+
+static free_head_arr __free_head_arr = {};
+static block_ptr* free_head = (block_ptr*)&__free_head_arr;
+/* the same as static block_ptr free_head[13] */
 
 /* Function prototypes for internal helper routines */
 static block_ptr insert_free(block_ptr bp);
@@ -158,14 +179,13 @@ int mm_init(void) {
     for (int i = 0; i != 13; i++) {
         free_head[i] = heap_listp + (i * DSIZE);
         SET_LINK(free_head[i], free_head[i], free_head[i], free_head[i]);
-    }
+    }                                                  /* Free lists heads */
     PUT(heap_listp + (26 * WSIZE), PACK(WSIZE, 1, 1)); /* Prologue header */
     PUT(heap_listp + (27 * WSIZE), PACK(0, 1, 1));     /* Epilogue header */
     heap_listp += (28 * WSIZE);
+
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE / WSIZE) == NULL) return -1;
-    // mm_checkheap(__LINE__);
-    dbg_printf("init: heap_listp is %p\n", heap_listp);
     return 0;
 }
 
@@ -186,22 +206,16 @@ block_ptr malloc(size_t size) {
     /* Adjust block size to include overhead and alignment reqs. */
     asize = adjust_size(size);
 
-    dbg_printf("malloc: size is %lu, asize is %lu\n", size, asize);
-
     /* Search the free list for a fit */
     if ((bp = find_fit(asize))) {
         place(bp, asize);
-        dbg_printf("malloc: placed %p\n\n", bp);
         return bp;
     }
 
     /* No fit found. Get more memory and place the block */
     extendsize = MAX(asize, CHUNKSIZE);
     if ((bp = extend_heap(extendsize / WSIZE)) == NULL) return NULL;
-    dbg_printf("malloc: extended %p\n", bp);
     place(bp, asize);
-    dbg_printf("malloc: placed %p\n", bp);
-    // mm_checkheap(__LINE__);
 
     return bp;
 }
@@ -224,8 +238,6 @@ void free(block_ptr bp) {
     SET_PREV_ALLOC(next, 0);
 
     coalesce(bp);
-    dbg_printf("free: free %p\n", bp);
-    // mm_checkheap(__LINE__);
 }
 
 /*
@@ -271,18 +283,23 @@ block_ptr realloc(block_ptr ptr, size_t size) {
  */
 void mm_checkheap(int lineno) {
     /* checklist:
-     * 1. prologue and epilogue
-     * 2. header and footer: minsize, alignment, allocated bit consistency
-     * 3. header matching its footer
-     * 4. coalescing: no consecutive free blocks
-     * 5. doubly linked list consistency: next's prev is me, prev's next is me
-     * 6. all blocks' address should be between mem_heap_lo() and
-     * mem_heap_high()
-     * 7. # of free blocks in heap == # of free blocks in free list
-     * 8. segregated free list: block size should be suitable for its size
-     * class
+     * - prologue and epilogue invarients
+     * - heap block invarients:
+     *      - minsize
+     *      - alignment
+     *      - allocated bit consistency
+     *      - address legality
+     *      - header matching its footer
+     *      - no consecutive free blocks
+     * - doubly linked list invarients:
+     *      - all blocks are free
+     *      - next's prev is me, prev's next is me
+     *      - double check minsize and address legality
+     *      - block size suitable for its size class (seglists)
+     *      - no duplicate blocks
+     * - # of free blocks in heap == # of free blocks in free lists
      */
-    dbg_printf("checkheap\n");
+
     block_ptr bp = heap_listp; /* first block in heap */
     const size_t min_size = 16;
     size_t free_cnt_by_heap = 0;
@@ -299,7 +316,7 @@ void mm_checkheap(int lineno) {
     ASSERT(GET_ALLOC(prologue) == 1);
     ASSERT(GET_ALLOC(epilogue) == 1);
 
-    /* header and footer */
+    /* heap block invarients */
     for (; SIZE(bp) != 0; bp = NEXT_BLKP(bp)) {
         size_t size = SIZE(bp);
         size_t alloc = ALLOC(bp);
@@ -308,55 +325,46 @@ void mm_checkheap(int lineno) {
         size_t next_alloc = ALLOC(next);
         size_t next_prev_alloc = PREV_ALLOC(next);
 
-        /* min size */
-        ASSERT(size >= min_size);
-
+        ASSERT(size >= min_size);         /* min size */
         ASSERT(size % DSIZE == 0);        /* alignment */
         ASSERT(alloc == next_prev_alloc); /* allocated bit consistency */
 
-        if (!alloc) {
-            free_cnt_by_heap++;
-            ASSERT(GET(HDRP(bp)) ==
-                   GET(FTRP(bp))); /* header matching footer */
-            ASSERT(next_alloc);    /* no consecutive free blocks */
-            if (!next_alloc) {
-                printf("mm_checkheap: consecutive free blocks %p\n", bp);
-                return;
-            }
-        }
-
-        /* address in heap */
         ASSERT(bp >= (block_ptr)mem_heap_lo() &&
-               bp <= (block_ptr)mem_heap_hi());
+               bp <= (block_ptr)mem_heap_hi()); /* address lies in heap */
+
+        if (!alloc) {
+            ASSERT(GET(HDRP(bp)) ==
+                   GET(FTRP(bp))); /* header matches footer */
+            ASSERT(next_alloc);    /* no consecutive free blocks */
+            free_cnt_by_heap++;
+        }
     }
 
-    /* doubly linked list consistency */
+    /* doubly linked list invarients */
     for (int i = 0; i != 13; i++) {
         block_ptr head = free_head[i];
 
         for (bp = SUCC(head, head); bp != head; bp = SUCC(bp, head)) {
             block_ptr pred = PRED(bp, head);
             block_ptr succ = SUCC(bp, head);
+            size_t size = SIZE(bp);
 
             ASSERT(SUCC(pred, head) == bp);
-            ASSERT(PRED(succ, head) == bp);
-            /* TODO: check size */
-            ASSERT(!ALLOC(bp));
+            ASSERT(PRED(succ, head) == bp); /* succ and pred are consistent */
+            ASSERT(head == find_head(size)); /* correct size class */
+            ASSERT(!ALLOC(bp));              /* free */
+            ASSERT(size >= min_size);        /* double check min size */
+            ASSERT(bp >= (block_ptr)mem_heap_lo() &&
+                   bp <= (block_ptr)mem_heap_hi()); /* double check address */
             free_cnt_by_list++;
+
             block_ptr p;
-            for (p = SUCC(bp, head); p != bp; p = SUCC(p, head)) {
-                ASSERT(bp != p);
-            }
-            dbg_printf("free block %p in free list %d, size = %lu\n", bp, i,
-                       size);
+            for (p = SUCC(bp, head); p != bp; p = SUCC(p, head))
+                ASSERT(bp != p); /* no duplicate blocks */
         }
     }
 
     ASSERT(free_cnt_by_heap == free_cnt_by_list);
-    if (free_cnt_by_heap != free_cnt_by_list) {
-        dbg_printf("free_cnt_by_heap: %lu\n", free_cnt_by_heap);
-        dbg_printf("free_cnt_by_list: %lu\n\n", free_cnt_by_list);
-    }
 }
 
 /*
@@ -367,58 +375,59 @@ void mm_checkheap(int lineno) {
  * find_head - find the head of the free list that fits the size
  */
 static block_ptr find_head(size_t size) {
-    int idx = 0;
+    int i = 0;
     if (size <= 16)
-        idx = 0;
+        i = 0;
     else if (size <= 20)
-        idx = 1;
+        i = 1;
     else if (size <= 36)
-        idx = 2;
+        i = 2;
     else if (size <= 68)
-        idx = 3;
+        i = 3;
     else if (size <= 132)
-        idx = 4;
+        i = 4;
     else if (size <= 260)
-        idx = 5;
+        i = 5;
     else if (size <= 516)
-        idx = 6;
+        i = 6;
     else if (size <= 1028)
-        idx = 7;
+        i = 7;
     else if (size <= 2052)
-        idx = 8;
+        i = 8;
     else if (size <= 4100)
-        idx = 9;
+        i = 9;
     else if (size <= 8196)
-        idx = 10;
+        i = 10;
     else if (size <= 16388)
-        idx = 11;
+        i = 11;
     else
-        idx = 12;
-    return free_head[idx];
+        i = 12;
+    return free_head[i];
 }
 
 /*
  * adjust_size - adjust malloc payload size to block size
  */
 static size_t adjust_size(size_t size) {
-    size_t asize;
     const size_t big_size = 128;
+    size_t nearest = DSIZE * ((size + (WSIZE) + (DSIZE - 1)) / DSIZE);
 
-    if (size <= DSIZE)
-        asize = DSIZE * 2;
+    /* For very small blocks (size <= 16), asize is 16 (min block size) */
+    if (size <= DSIZE) return DSIZE * 2;
 
+    /* For large blocks, we round it up to the nearest multiple of big_size,
+     * if this will not cause too much internal fragmentation.
+     */
     else if (size > (big_size * 3)) {
         size_t q = size / big_size;
         size_t r = size % big_size;
-        if ((2 * r) < big_size)
-            asize = DSIZE * ((size + (WSIZE) + (DSIZE - 1)) / DSIZE);
+        if (r < big_size / 2)
+            return nearest;
         else
-            asize = (q + 1) * big_size + DSIZE;
+            return (q + 1) * big_size + DSIZE;
     }
 
-    else
-        asize = DSIZE * ((size + (WSIZE) + (DSIZE - 1)) / DSIZE);
-    return asize;
+    return nearest;
 }
 
 /*
@@ -467,13 +476,12 @@ static block_ptr extend_heap(size_t words) {
     SET_FTR(bp, size, prev_alloc, 0); /* Free block footer */
     SET_HDR(NEXT_BLKP(bp), 0, 0, 1);  /* New epilogue header */
 
-    /* Coalesce if the previous block was free */
     return coalesce(bp);
 }
 
 /*
  * coalesce - Boundary tag coalescing. Return ptr to coalesced block
- * coalesce will manage the free list automatically
+ * coalesce will manage free lists automatically
  */
 static block_ptr coalesce(block_ptr bp) {
     block_ptr next = NEXT_BLKP(bp);
@@ -481,8 +489,6 @@ static block_ptr coalesce(block_ptr bp) {
     size_t prev_alloc = PREV_ALLOC(bp);
     size_t next_alloc = ALLOC(next);
     size_t size = SIZE(bp);
-
-    // if (prev_alloc) insert_free(bp); /* a new free block */
 
     if (prev_alloc && next_alloc) { /* Case 1 */
         return insert_free(bp);
@@ -519,8 +525,6 @@ static block_ptr coalesce(block_ptr bp) {
 
     insert_free(bp);
 
-    // mm_checkheap(__LINE__);
-
     return bp;
 }
 
@@ -536,19 +540,18 @@ static void place(block_ptr bp, size_t asize) {
     delete_free(bp);
 
     if ((csize - asize) >= (2 * DSIZE)) {
-        dbg_printf("place: splitting %p\n", bp);
         SET_HDR(bp, asize, prev_alloc, 1);
         bp = NEXT_BLKP(bp);
         SET_HDR(bp, csize - asize, 1, 0);
         SET_FTR(bp, csize - asize, 1, 0);
         SET_PREV_ALLOC(next, 0);
-        insert_free(bp); /* no need to coalesce */
-        dbg_printf("place: free block %p\n", bp);
-    } else {
+        insert_free(bp);
+    }
+
+    else {
         SET_HDR(bp, csize, prev_alloc, 1);
         SET_PREV_ALLOC(next, 1);
     }
-    // mm_checkheap(__LINE__);
 }
 
 /*
@@ -556,11 +559,36 @@ static void place(block_ptr bp, size_t asize) {
  */
 static block_ptr find_fit(size_t asize) {
     block_ptr bp;
-    for (block_ptr head = find_head(asize); head != HEAD_END;
-         head = NEXT_HEAD(head)) {
-        for (bp = SUCC(head, head); bp != head; bp = SUCC(bp, head)) {
-            if (asize <= SIZE(bp)) return bp;
+    block_ptr head = find_head(asize);
+
+    /* find in curr size class, sixth fit */
+    block_ptr best_bp = NULL;
+    size_t best_size = SIZE_MAX;
+    int fit_cnt = 0;
+
+    for (bp = SUCC(head, head); bp != head; bp = SUCC(bp, head)) {
+        if (asize <= SIZE(bp)) {
+            if (SIZE(bp) < best_size) {
+                best_size = SIZE(bp);
+                best_bp = bp;
+            }
+            if (++fit_cnt == 6) return best_bp;
         }
+    }
+
+    if (best_bp) return best_bp; /* less than 6 fits, use best_bp */
+
+    /* no fit in curr class, find in larger classes. use best fit */
+    for (head = NEXT_HEAD(head); head != HEAD_END; head = NEXT_HEAD(head)) {
+        best_size = SIZE_MAX;
+        best_bp = NULL;
+        for (bp = SUCC(head, head); bp != head; bp = SUCC(bp, head)) {
+            if (asize <= SIZE(bp) && SIZE(bp) < best_size) {
+                best_size = SIZE(bp);
+                best_bp = bp;
+            }
+        }
+        if (best_bp) return best_bp;
     }
 
     return NULL; /* No fit */
