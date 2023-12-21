@@ -26,33 +26,33 @@
 void unix_error(char* msg) /* Unix-style error */
 {
     fprintf(stderr, "%s: %s\n", msg, strerror(errno));
-    // exit(0);
+    exit(0);
 }
 /* $end unixerror */
 
 void posix_error(int code, char* msg) /* Posix-style error */
 {
     fprintf(stderr, "%s: %s\n", msg, strerror(code));
-    // exit(0);
+    exit(0);
 }
 
 void gai_error(int code, char* msg) /* Getaddrinfo-style error */
 {
     fprintf(stderr, "%s: %s\n", msg, gai_strerror(code));
-    // exit(0);
+    exit(0);
 }
 
 void app_error(char* msg) /* Application error */
 {
     fprintf(stderr, "%s\n", msg);
-    // exit(0);
+    exit(0);
 }
 /* $end errorfuns */
 
 void dns_error(char* msg) /* Obsolete gethostbyname error */
 {
     fprintf(stderr, "%s\n", msg);
-    // exit(0);
+    exit(0);
 }
 
 /*********************************************
@@ -797,7 +797,7 @@ int open_clientfd(char* hostname, char* port) {
     hints.ai_socktype = SOCK_STREAM; /* Open a connection */
     hints.ai_flags = AI_NUMERICSERV; /* ... using a numeric port arg. */
     hints.ai_flags |= AI_ADDRCONFIG; /* Recommended for connections */
-    if (getaddrinfo(hostname, port, &hints, &listp) < 0) return -1;
+    Getaddrinfo(hostname, port, &hints, &listp);
 
     /* Walk the list for one that we can successfully connect to */
     for (p = listp; p; p = p->ai_next) {
@@ -810,14 +810,16 @@ int open_clientfd(char* hostname, char* port) {
         if (connect(clientfd, p->ai_addr, p->ai_addrlen) != -1)
             break; /* Success */
         Close(clientfd);
-        /* Connect failed, try another */  // line:netp:openclientfd:closefd
+            /* Connect failed, try another */  // line:netp:openclientfd:closefd
     }
 
     /* Clean up */
     Freeaddrinfo(listp);
     if (!p) /* All connects failed */
+    {
+        printf("open_clientfd: all connects failed\n");
         return -1;
-    else /* The last connect succeeded */
+    } else /* The last connect succeeded */
         return clientfd;
 }
 /* $end open_clientfd */
