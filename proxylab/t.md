@@ -1,9 +1,15 @@
 # Hints
 
 ```bash
-./proxy 15214 &
-./tiny/tiny 15213 &
-curl -v --proxy http://localhost:55555 http://localhost:55556/home.html
+
+cd ./tiny/
+./tiny 55556 &
+cd ..
+./proxy 55555 &
+curl -v --proxy http://localhost:55555 http://localhost:55556/home.html > dbg
+kill %2
+curl -v --proxy http://localhost:55555 http://localhost:55556/home.html >> dbg
+kill %1
 ```
 
 DETACHED threads can be killed by other threads

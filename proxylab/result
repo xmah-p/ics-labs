@@ -1,0 +1,72 @@
+*** Basic ***
+Starting tiny on 12705
+Starting proxy on 29231
+1: home.html
+   Fetching ./tiny/home.html into ./.proxy using the proxy
+   Fetching ./tiny/home.html into ./.noproxy directly from Tiny
+   Comparing the two files
+   Success: Files are identical.
+2: csapp.c
+   Fetching ./tiny/csapp.c into ./.proxy using the proxy
+   Fetching ./tiny/csapp.c into ./.noproxy directly from Tiny
+   Comparing the two files
+   Success: Files are identical.
+3: tiny.c
+   Fetching ./tiny/tiny.c into ./.proxy using the proxy
+   Fetching ./tiny/tiny.c into ./.noproxy directly from Tiny
+   Comparing the two files
+   Success: Files are identical.
+4: godzilla.jpg
+   Fetching ./tiny/godzilla.jpg into ./.proxy using the proxy
+   Fetching ./tiny/godzilla.jpg into ./.noproxy directly from Tiny
+   Comparing the two files
+Files ./.proxy/godzilla.jpg and ./.noproxy/godzilla.jpg differ
+   Failure: Files differ.
+5: tiny
+   Fetching ./tiny/tiny into ./.proxy using the proxy
+   Fetching ./tiny/tiny into ./.noproxy directly from Tiny
+   Comparing the two files
+Files ./.proxy/tiny and ./.noproxy/tiny differ
+   Failure: Files differ.
+Killing tiny and proxy
+Basic: 24 / 40
+
+*** Concurrency ***
+Starting tiny on port 8977
+Starting proxy on port 20153
+Starting the blocking NOP server on port 31194
+Trying to fetch a file from the blocking nop-server
+Fetching ./tiny/home.html into ./.noproxy directly from Tiny
+Fetching ./tiny/home.html into ./.proxy using the proxy
+Checking whether the proxy fetch succeeded
+Success: Was able to fetch tiny/home.html from the proxy.
+Killing tiny, proxy, and nop-server
+Concurrency: 15 / 15
+
+*** Cache ***
+Starting tiny on port 22734
+Starting proxy on port 22581
+Fetching ./tiny/tiny.c into ./.proxy using the proxy
+Fetching ./tiny/home.html into ./.proxy using the proxy
+Fetching ./tiny/csapp.c into ./.proxy using the proxy
+Killing tiny
+Fetching a cached copy of ./tiny/home.html into ./.noproxy
+Error: Fetch timed out after 5 seconds
+Failure: Was not able to fetch tiny/home.html from the proxy cache.
+Killing proxy
+Cache: 0 / 15
+
+*** Real Pages ***
+Starting proxy on port 20234
+Starting tiny on 20906
+Setup done, running webdriver
+= launching chrome 1703176675.9425926
+= loading page 1703176676.6472018
+url: http://127.0.0.1.nip.io:20906/browser-testbench/index.html
+title: (loading) Browser TestBench
+Killing tiny and proxy
+Real Pages: 0 / 18
+
+totalScore = 39 / 88
+
+{ "scores": {"Basic":24, "Concurrency":15, "Caching":0, "Real Pages":0},"scoreboard": [39, 24, 15, 0, 0]}

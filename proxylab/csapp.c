@@ -26,33 +26,33 @@
 void unix_error(char* msg) /* Unix-style error */
 {
     fprintf(stderr, "%s: %s\n", msg, strerror(errno));
-    exit(0);
+    // exit(0);
 }
 /* $end unixerror */
 
 void posix_error(int code, char* msg) /* Posix-style error */
 {
     fprintf(stderr, "%s: %s\n", msg, strerror(code));
-    exit(0);
+    // exit(0);
 }
 
 void gai_error(int code, char* msg) /* Getaddrinfo-style error */
 {
     fprintf(stderr, "%s: %s\n", msg, gai_strerror(code));
-    exit(0);
+    // exit(0);
 }
 
 void app_error(char* msg) /* Application error */
 {
     fprintf(stderr, "%s\n", msg);
-    exit(0);
+    // exit(0);
 }
 /* $end errorfuns */
 
 void dns_error(char* msg) /* Obsolete gethostbyname error */
 {
     fprintf(stderr, "%s\n", msg);
-    exit(0);
+    // exit(0);
 }
 
 /*********************************************
@@ -752,12 +752,17 @@ ssize_t rio_readlineb(rio_t* rp, void* usrbuf, size_t maxlen) {
 ssize_t Rio_readn(int fd, void* ptr, size_t nbytes) {
     ssize_t n;
 
-    if ((n = rio_readn(fd, ptr, nbytes)) < 0) unix_error("Rio_readn error");
+    if ((n = rio_readn(fd, ptr, nbytes)) < 0) {
+        if (errno != ECONNRESET && errno != EBADF)
+            unix_error("Rio_readn error");
+    }
     return n;
 }
 
 void Rio_writen(int fd, void* usrbuf, size_t n) {
-    if (rio_writen(fd, usrbuf, n) != n) unix_error("Rio_writen error");
+    if (rio_writen(fd, usrbuf, n) != n) {
+        if (errno != EPIPE && errno != EBADF) unix_error("Rio_writen error");
+    }
 }
 
 void Rio_readinitb(rio_t* rp, int fd) { rio_readinitb(rp, fd); }
@@ -765,15 +770,20 @@ void Rio_readinitb(rio_t* rp, int fd) { rio_readinitb(rp, fd); }
 ssize_t Rio_readnb(rio_t* rp, void* usrbuf, size_t n) {
     ssize_t rc;
 
-    if ((rc = rio_readnb(rp, usrbuf, n)) < 0) unix_error("Rio_readnb error");
+    if ((rc = rio_readnb(rp, usrbuf, n)) < 0) {
+        if (errno != ECONNRESET && errno != EBADF)
+            unix_error("Rio_readnb error");
+    }
     return rc;
 }
 
 ssize_t Rio_readlineb(rio_t* rp, void* usrbuf, size_t maxlen) {
     ssize_t rc;
 
-    if ((rc = rio_readlineb(rp, usrbuf, maxlen)) < 0)
-        unix_error("Rio_readlineb error");
+    if ((rc = rio_readlineb(rp, usrbuf, maxlen)) < 0) {
+        if (errno != ECONNRESET && errno != EBADF)
+            unix_error("Rio_readlineb error");
+    }
     return rc;
 }
 
@@ -810,16 +820,14 @@ int open_clientfd(char* hostname, char* port) {
         if (connect(clientfd, p->ai_addr, p->ai_addrlen) != -1)
             break; /* Success */
         Close(clientfd);
-            /* Connect failed, try another */  // line:netp:openclientfd:closefd
+        /* Connect failed, try another */  // line:netp:openclientfd:closefd
     }
 
     /* Clean up */
     Freeaddrinfo(listp);
     if (!p) /* All connects failed */
-    {
-        printf("open_clientfd: all connects failed\n");
         return -1;
-    } else /* The last connect succeeded */
+    else /* The last connect succeeded */
         return clientfd;
 }
 /* $end open_clientfd */

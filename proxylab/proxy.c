@@ -1,12 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "cache.h"
 #include "csapp.h"
 
-/* Recommended max cache and object sizes */
-#define MAX_CACHE_SIZE 1049000
-#define MAX_OBJECT_SIZE 102400
-#define MAXBUFFER 4096 /* max temporary buffer size */
+#define MAXBUFFER 4096 /* Max temporary buffer size */
 
 /* You won't lose style points for including this long line in your code */
 static const char* user_agent_hdr =
@@ -71,8 +69,6 @@ void forward(int connfd) {
     char method[MAXBUFFER], url[MAXBUFFER], version[MAXBUFFER];
 
     /* Read request line */
-    printf("Reading request line...\n");
-    /* GET http://www.cmu.edu/hub/index.html HTTP/1.1 */
     Rio_readlineb(&rio_client, reqline, MAXLINE);
     sscanf(reqline, "%s %s %s", method, url, version);
 
@@ -90,8 +86,6 @@ void forward(int connfd) {
         return;
     }
 
-    printf("method = %s, url = %s, version = %s\n", method, url, version);
-
     /* Parse URL */
     char hostname[MAXBUFFER], pathname[MAXBUFFER], port[MAXBUFFER];
     if (parse_url(url, hostname, pathname, port) < 0) {
@@ -100,23 +94,19 @@ void forward(int connfd) {
         return;
     }
 
-    printf("hostname = %s, pathname = %s, port = %s\n\n", hostname, pathname,
-           port);
-
     /* Read request headers */
     char reqhdr[MAXLINE];
     char fwd_reqhdr[MAXLINE];
 
     for (Rio_readlineb(&rio_client, reqhdr, MAXLINE); strcmp(reqhdr, "\r\n");
          Rio_readlineb(&rio_client, reqhdr, MAXLINE)) {
-        printf("Read request header: %s", reqhdr);
         if (!strncasecmp(reqhdr, "Host", 4)) {
             strcpy(hostname, reqhdr + 6);
             hostname[strlen(hostname) - 2] = '\0';
             char* ptr = strchr(hostname, ':');
             if (ptr) {
                 *ptr = '\0';
-                strcpy(port, ptr + 1);        // Maybe wrong
+                strcpy(port, ptr + 1);  // Maybe wrong
             }
         } else if (!strncasecmp(reqhdr, "User-Agent", 10) ||
                    !strncasecmp(reqhdr, "Connection", 10) ||
@@ -139,22 +129,7 @@ void forward(int connfd) {
     strcat(request, fwd_reqhdr);
     strcat(request, "\r\n");
 
-    printf("Constructed request:\n%s", request);
-
-    /* Send request to server */
-    rio_t rio_server;
-    int clientfd = Open_clientfd(hostname, port);
-    Rio_readinitb(&rio_server, clientfd);
-    Rio_writen(clientfd, request, strlen(request));
-
-    /* Forward response to client */
-    char response[MAXLINE];
-    int n;
-    while ((n = Rio_readlineb(&rio_server, response, MAXLINE)) != 0) {
-        Rio_writen(connfd, response, n);
-    }
-
-    Close(clientfd);
+    cache_response(hostname, port, pathname, request, connfd);
 }
 
 void clienterror(int fd, char* cause, char* errnum, char* shortmsg,
@@ -183,6 +158,15 @@ void clienterror(int fd, char* cause, char* errnum, char* shortmsg,
     rio_writen(fd, body, strlen(body));
 }
 
+void* thread(void* vargp) {
+    int connfd = *((int*)vargp);
+    Pthread_detach(pthread_self());
+    Free(vargp);
+    forward(connfd);
+    Close(connfd);
+    return NULL;
+}
+
 /* Listen for incoming connections on a specified port */
 int main(int argc, char** argv) {
     /* Check command line args */
@@ -194,21 +178,26 @@ int main(int argc, char** argv) {
     char* port = argv[1];
     int listenfd = Open_listenfd(port);
 
+    /* Ignore SIGPIPE */
+    Signal(SIGPIPE, SIG_IGN);
+
+    /* Init semaphores */
+    Sem_init(&mutex, 0, 1);
+    Sem_init(&w, 0, 1);
+    readcnt = 0;
+
     while (1) {
-        printf("Waiting for connection...\n");
         struct sockaddr_storage clientaddr;
         socklen_t clientlen = sizeof clientaddr;
-        int connfd = Accept(listenfd, (SA*)&clientaddr, &clientlen);
+        int* connfdp = Malloc(sizeof(int));
+        *connfdp = Accept(listenfd, (SA*)&clientaddr, &clientlen);
 
-        /* Debug */
         char client_hostname[MAXBUFFER], client_port[MAXBUFFER];
         Getnameinfo((SA*)&clientaddr, clientlen, client_hostname, MAXBUFFER,
                     client_port, MAXBUFFER, 0);
-        printf("Connected to (%s, %s)\n", client_hostname, client_port);
-        /* Debug end */
 
-        forward(connfd);
-        Close(connfd);
+        pthread_t tid;
+        Pthread_create(&tid, NULL, (void*)&thread, connfdp);
     }
     Close(listenfd);
 }
