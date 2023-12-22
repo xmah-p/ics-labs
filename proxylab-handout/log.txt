@@ -1,4 +1,3 @@
-Rio_writen error: Connection reset by peer
 Getaddrinfo error: Name or service not known
 Open_clientfd error: Success
 Open_clientfd error: Connection refused

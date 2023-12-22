@@ -164,18 +164,16 @@ void forward(int connfd) {
     //     P(&w);
     // V(&mutex);
 
-    // /* Critical section */
-    // /* Reading happens */
-    // for (int i = 0; i < MAX_CACHE_LINE; i++) {
-    //     if (match(hostname, port, pathname, &cache[i])) {
-    //         printf("Cache hit!\n");
-    //         cache[i].lru = ++lrucnt;
-    //         Rio_writen(connfd, cache[i].content, cache[i].size);
-    //         return;
-    //     }
-    // }
-
-    // printf("Cache miss!\n");
+    /* Critical section */
+    /* Reading happens */
+    for (int i = 0; i < MAX_CACHE_LINE; i++) {
+        if (match(hostname, port, pathname, &cache[i])) {
+            printf("Cache hit!\n");
+            // cache[i].lru = ++lrucnt;
+            Rio_writen(connfd, cache[i].content, cache[i].size);
+            return;
+        }
+    }
 
     // P(&mutex);
     // readcnt--;
@@ -202,25 +200,25 @@ void forward(int connfd) {
     Close(clientfd);
 
     // P(&w);
-    // /* Critical section */
-    // /* Writing happens */
-    // /* Cache eviction */
-    // int min = 0;
-    // for (int i = 0; i < MAX_CACHE_LINE; i++) {
-    //     if (cache[i].size == 0) {
-    //         min = i;
-    //         break;
-    //     }
-    //     if (cache[i].lru < cache[min].lru) min = i;
-    // }
-    // if (size < MAX_OBJECT_SIZE) {
-    //     strcpy(cache[min].hostname, hostname);
-    //     strcpy(cache[min].port, port);
-    //     strcpy(cache[min].pathname, pathname);
-    //     memcpy(cache[min].content, response, size);
-    //     cache[min].size = size;
-    //     cache[min].lru = ++lrucnt;
-    // }
+    /* Critical section */
+    /* Writing happens */
+    /* Cache eviction */
+    int min = 0;
+    for (int i = 0; i < MAX_CACHE_LINE; i++) {
+        if (cache[i].size == 0) {
+            min = i;
+            break;
+        }
+        if (cache[i].lru < cache[min].lru) min = i;
+    }
+    if (size < MAX_OBJECT_SIZE) {
+        strcpy(cache[min].hostname, hostname);
+        strcpy(cache[min].port, port);
+        strcpy(cache[min].pathname, pathname);
+        memcpy(cache[min].content, response, size);
+        cache[min].size = size;
+        cache[min].lru = ++lrucnt;
+    }
     // V(&w);
 }
 
@@ -259,6 +257,13 @@ void* thread(void* vargp) {
     return NULL;
 }
 
+void cache_init(void) {
+    for (int i = 0; i < MAX_CACHE_LINE; i++) {
+        cache[i].size = 0;
+        cache[i].lru = 0;
+    }
+}
+
 /* Listen for incoming connections on a specified port */
 int main(int argc, char** argv) {
     /* Check command line args */
@@ -278,9 +283,10 @@ int main(int argc, char** argv) {
     /* Ignore SIGPIPE */
     Signal(SIGPIPE, SIG_IGN);
 
-    /* Init semaphores */
+    /* Initialization*/
     Sem_init(&mutex, 0, 1);
     Sem_init(&w, 0, 1);
+    cache_init();
     readcnt = 0;
 
     while (1) {

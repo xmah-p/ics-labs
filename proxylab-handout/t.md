@@ -12,6 +12,25 @@ curl -v --proxy http://localhost:55555 http://localhost:55556/home.html >> dbg
 kill %1
 ```
 
+Cache Concurrency Check
+In this test, we check the caching functionality of your proxy by these steps:
+
+Load 5 images with different URL. Each image will be loaded 3 times.
+Tell TINY to stop responding to new requests.
+Load these images again. Each image will be loaded 3 times and they should be served by your proxy.
+Load 5 new images, 3 times each. These requests should fail because TINY has stopped responding.
+Done :)
+
+Cache LRU Check
+In this test, we check the LRU nature of your caching proxy by these steps:
+
+Load images #0 ~ #29 in a nearly sequential manner. Each image is of 50KB large so it should be added into cache.
+Tell TINY to stop responding to new requests.
+Load images #27 ~ #29 again. They should be served by your proxy.
+Load images #0 ~ #2. They should be evicted from cache; therefore these requests will fail.
+Done :)
+
+
 DETACHED threads can be killed by other threads
 
 `SIGPIPE`
