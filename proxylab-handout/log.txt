@@ -1,3 +1,0 @@
-Getaddrinfo error: Name or service not known
-Open_clientfd error: Success
-Open_clientfd error: Connection refused

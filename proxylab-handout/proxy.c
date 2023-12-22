@@ -4,16 +4,10 @@
 #include "cache.h"
 #include "csapp.h"
 
-#define MAXBUFFER 4096 /* Max temporary buffer size */
-/* Recommended max cache and object sizes */
+#define MAX_BUFFER 4096 /* Max temporary buffer size */
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
 #define MAX_CACHE_LINE 10
-
-/* You won't lose style points for including this long line in your code */
-static const char* user_agent_hdr =
-    "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
-    "Firefox/10.0.3\r\n";
 
 typedef struct {
     char hostname[MAXLINE];
@@ -25,14 +19,39 @@ typedef struct {
 } Cache;
 
 /* Global variables */
-int readcnt;    /* Initially = 0 */
-sem_t mutex, w; /* Both initially = 1 */
+pthread_rwlock_t rwlock;
+Cache cache[MAX_CACHE_LINE];
+unsigned int lrucnt;
+static const char* user_agent_hdr =
+    "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
+    "Firefox/10.0.3\r\n";
 
-static Cache cache[MAX_CACHE_LINE] = {};
-static unsigned int lrucnt = 0;
-
+/* Function prototypes */
+void cache_init(void);
+int match(const char* hostname, const char* port, const char* pathname,
+          Cache* cache);
+static int parse_url(char* url, char* hostname, char* pathname, char* port);
+void forward(int connfd);
+void* thread(void* vargp);
 void clienterror(int fd, char* cause, char* errnum, char* shortmsg,
                  char* longmsg);
+
+void cache_init(void) {
+    pthread_rwlock_init(&rwlock, NULL);
+    lrucnt = 0;
+    for (int i = 0; i < MAX_CACHE_LINE; i++) {
+        cache[i].size = 0;
+        cache[i].lru = 0;
+    }
+}
+
+/* Check if hostname, port, pathname match */
+int match(const char* hostname, const char* port, const char* pathname,
+          Cache* cache) {
+    return !strcasecmp(hostname, cache->hostname) &&
+           !strcasecmp(port, cache->port) &&
+           !strcasecmp(pathname, cache->pathname);
+}
 
 /* Parse URL into hostname, pathname, and port
  * Supported format:
@@ -41,7 +60,7 @@ void clienterror(int fd, char* cause, char* errnum, char* shortmsg,
  * www.cmu.edu/hub/index.html
  * www.cmu.edu:8080/hub/index.html
  */
-int parse_url(char* url, char* hostname, char* pathname, char* port) {
+static int parse_url(char* url, char* hostname, char* pathname, char* port) {
     char* ptr = url;
 
     /* Check protocol */
@@ -78,14 +97,6 @@ int parse_url(char* url, char* hostname, char* pathname, char* port) {
     return 0;
 }
 
-/* Check if hostname, port, pathname match */
-static int match(char* hostname, char* port, char* pathname, Cache* cache) {
-    return !strcasecmp(hostname, cache->hostname) &&
-           !strcasecmp(port, cache->port) &&
-           !strcasecmp(pathname, cache->pathname);
-}
-
-
 /* Read and parse the request sent from clientfd, and forward it to the server
  * specified in the request.
  */
@@ -94,7 +105,7 @@ void forward(int connfd) {
     Rio_readinitb(&rio_client, connfd);
 
     char reqline[MAXLINE];
-    char method[MAXBUFFER], url[MAXBUFFER], version[MAXBUFFER];
+    char method[MAX_BUFFER], url[MAX_BUFFER], version[MAX_BUFFER];
 
     /* Read request line */
     Rio_readlineb(&rio_client, reqline, MAXLINE);
@@ -115,7 +126,7 @@ void forward(int connfd) {
     }
 
     /* Parse URL */
-    char hostname[MAXBUFFER], pathname[MAXBUFFER], port[MAXBUFFER];
+    char hostname[MAX_BUFFER], pathname[MAX_BUFFER], port[MAX_BUFFER];
     if (parse_url(url, hostname, pathname, port) < 0) {
         clienterror(connfd, url, "400", "Bad Request",
                     "Proxy could not parse this URL");
@@ -134,7 +145,7 @@ void forward(int connfd) {
             char* ptr = strchr(hostname, ':');
             if (ptr) {
                 *ptr = '\0';
-                strcpy(port, ptr + 1);  // Maybe wrong
+                strcpy(port, ptr + 1);
             }
         } else if (!strncasecmp(reqhdr, "User-Agent", 10) ||
                    !strncasecmp(reqhdr, "Connection", 10) ||
@@ -157,30 +168,19 @@ void forward(int connfd) {
     strcat(request, fwd_reqhdr);
     strcat(request, "\r\n");
 
-    // /* Retrieve from cache */
-    // P(&mutex);
-    // readcnt++;
-    // if (readcnt == 1) /* First in */
-    //     P(&w);
-    // V(&mutex);
-
-    /* Critical section */
-    /* Reading happens */
+    /* Retrieve from cache */
     for (int i = 0; i < MAX_CACHE_LINE; i++) {
         if (match(hostname, port, pathname, &cache[i])) {
-            printf("Cache hit!\n");
-            // cache[i].lru = ++lrucnt;
+            /* Cache hit */
+            pthread_rwlock_rdlock(&rwlock); /* Read lock */
             Rio_writen(connfd, cache[i].content, cache[i].size);
+            pthread_rwlock_unlock(&rwlock); /* Read unlock */
             return;
         }
     }
 
-    // P(&mutex);
-    // readcnt--;
-    // if (readcnt == 0) V(&w);
-    // V(&mutex);
-
     /* Cache miss */
+
     /* Send request to server */
     rio_t rio_server;
     int clientfd = Open_clientfd(hostname, port);
@@ -199,10 +199,7 @@ void forward(int connfd) {
     }
     Close(clientfd);
 
-    // P(&w);
-    /* Critical section */
-    /* Writing happens */
-    /* Cache eviction */
+    /* Cache response */
     int min = 0;
     for (int i = 0; i < MAX_CACHE_LINE; i++) {
         if (cache[i].size == 0) {
@@ -212,19 +209,21 @@ void forward(int connfd) {
         if (cache[i].lru < cache[min].lru) min = i;
     }
     if (size < MAX_OBJECT_SIZE) {
+        pthread_rwlock_wrlock(&rwlock); /* Write lock */
         strcpy(cache[min].hostname, hostname);
         strcpy(cache[min].port, port);
         strcpy(cache[min].pathname, pathname);
         memcpy(cache[min].content, response, size);
         cache[min].size = size;
         cache[min].lru = ++lrucnt;
+        pthread_rwlock_unlock(&rwlock); /* Write unlock */
     }
-    // V(&w);
+    pthread_rwlock_destroy(&rwlock);
 }
 
 void clienterror(int fd, char* cause, char* errnum, char* shortmsg,
                  char* longmsg) {
-    char buf[MAXBUFFER] = "";
+    char buf[MAX_BUFFER] = "";
     char body[MAXBUF] = "";
 
     /* Build the HTTP response body */
@@ -257,13 +256,6 @@ void* thread(void* vargp) {
     return NULL;
 }
 
-void cache_init(void) {
-    for (int i = 0; i < MAX_CACHE_LINE; i++) {
-        cache[i].size = 0;
-        cache[i].lru = 0;
-    }
-}
-
 /* Listen for incoming connections on a specified port */
 int main(int argc, char** argv) {
     /* Check command line args */
@@ -275,29 +267,17 @@ int main(int argc, char** argv) {
     char* port = argv[1];
     int listenfd = Open_listenfd(port);
 
-    /* Redirect stderr to file err.txt */
-    int fd = Open("log.txt", O_WRONLY | O_CREAT | O_TRUNC, 0666);
-    Dup2(fd, STDOUT_FILENO);
-    Dup2(fd, STDERR_FILENO);
-
     /* Ignore SIGPIPE */
     Signal(SIGPIPE, SIG_IGN);
 
     /* Initialization*/
-    Sem_init(&mutex, 0, 1);
-    Sem_init(&w, 0, 1);
     cache_init();
-    readcnt = 0;
 
     while (1) {
         struct sockaddr_storage clientaddr;
         socklen_t clientlen = sizeof clientaddr;
         int* connfdp = Malloc(sizeof(int));
         *connfdp = Accept(listenfd, (SA*)&clientaddr, &clientlen);
-
-        char client_hostname[MAXBUFFER], client_port[MAXBUFFER];
-        Getnameinfo((SA*)&clientaddr, clientlen, client_hostname, MAXBUFFER,
-                    client_port, MAXBUFFER, 0);
 
         pthread_t tid;
         Pthread_create(&tid, NULL, (void*)&thread, connfdp);
