@@ -5,11 +5,31 @@
 #include "csapp.h"
 
 #define MAXBUFFER 4096 /* Max temporary buffer size */
+/* Recommended max cache and object sizes */
+#define MAX_CACHE_SIZE 1049000
+#define MAX_OBJECT_SIZE 102400
+#define MAX_CACHE_LINE 10
 
 /* You won't lose style points for including this long line in your code */
 static const char* user_agent_hdr =
     "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
     "Firefox/10.0.3\r\n";
+
+typedef struct {
+    char hostname[MAXLINE];
+    char port[MAXLINE];
+    char pathname[MAXLINE];
+    char content[MAX_OBJECT_SIZE];
+    size_t size;
+    unsigned int lru;
+} Cache;
+
+/* Global variables */
+int readcnt;    /* Initially = 0 */
+sem_t mutex, w; /* Both initially = 1 */
+
+static Cache cache[MAX_CACHE_LINE] = {};
+static unsigned int lrucnt = 0;
 
 void clienterror(int fd, char* cause, char* errnum, char* shortmsg,
                  char* longmsg);
@@ -57,6 +77,14 @@ int parse_url(char* url, char* hostname, char* pathname, char* port) {
 
     return 0;
 }
+
+/* Check if hostname, port, pathname match */
+static int match(char* hostname, char* port, char* pathname, Cache* cache) {
+    return !strcasecmp(hostname, cache->hostname) &&
+           !strcasecmp(port, cache->port) &&
+           !strcasecmp(pathname, cache->pathname);
+}
+
 
 /* Read and parse the request sent from clientfd, and forward it to the server
  * specified in the request.
@@ -129,7 +157,71 @@ void forward(int connfd) {
     strcat(request, fwd_reqhdr);
     strcat(request, "\r\n");
 
-    cache_response(hostname, port, pathname, request, connfd);
+    // /* Retrieve from cache */
+    // P(&mutex);
+    // readcnt++;
+    // if (readcnt == 1) /* First in */
+    //     P(&w);
+    // V(&mutex);
+
+    // /* Critical section */
+    // /* Reading happens */
+    // for (int i = 0; i < MAX_CACHE_LINE; i++) {
+    //     if (match(hostname, port, pathname, &cache[i])) {
+    //         printf("Cache hit!\n");
+    //         cache[i].lru = ++lrucnt;
+    //         Rio_writen(connfd, cache[i].content, cache[i].size);
+    //         return;
+    //     }
+    // }
+
+    // printf("Cache miss!\n");
+
+    // P(&mutex);
+    // readcnt--;
+    // if (readcnt == 0) V(&w);
+    // V(&mutex);
+
+    /* Cache miss */
+    /* Send request to server */
+    rio_t rio_server;
+    int clientfd = Open_clientfd(hostname, port);
+    Rio_readinitb(&rio_server, clientfd);
+    Rio_writen(clientfd, request, strlen(request));
+
+    /* Forward response to client */
+    char response[MAX_OBJECT_SIZE];
+    char buf[MAXLINE];
+    int n;
+    size_t size = 0;
+    while ((n = Rio_readlineb(&rio_server, buf, MAXLINE)) != 0) {
+        Rio_writen(connfd, buf, n);
+        if (size + n < MAX_OBJECT_SIZE) memcpy(response + size, buf, n);
+        size += n;
+    }
+    Close(clientfd);
+
+    // P(&w);
+    // /* Critical section */
+    // /* Writing happens */
+    // /* Cache eviction */
+    // int min = 0;
+    // for (int i = 0; i < MAX_CACHE_LINE; i++) {
+    //     if (cache[i].size == 0) {
+    //         min = i;
+    //         break;
+    //     }
+    //     if (cache[i].lru < cache[min].lru) min = i;
+    // }
+    // if (size < MAX_OBJECT_SIZE) {
+    //     strcpy(cache[min].hostname, hostname);
+    //     strcpy(cache[min].port, port);
+    //     strcpy(cache[min].pathname, pathname);
+    //     memcpy(cache[min].content, response, size);
+    //     cache[min].size = size;
+    //     cache[min].lru = ++lrucnt;
+    // }
+    // V(&w);
 }
 
 void clienterror(int fd, char* cause, char* errnum, char* shortmsg,
@@ -177,6 +269,11 @@ int main(int argc, char** argv) {
 
     char* port = argv[1];
     int listenfd = Open_listenfd(port);
+
+    /* Redirect stderr to file err.txt */
+    int fd = Open("log.txt", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    Dup2(fd, STDOUT_FILENO);
+    Dup2(fd, STDERR_FILENO);
 
     /* Ignore SIGPIPE */
     Signal(SIGPIPE, SIG_IGN);
